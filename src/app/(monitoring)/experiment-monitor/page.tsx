@@ -1,41 +1,17 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
-import { Activity, ArrowRightLeft, Clock3, RefreshCw, ShieldAlert, TriangleAlert } from "lucide-react";
+import { Activity, ArrowRightLeft, Coins, RefreshCw, ShieldAlert, Zap } from "lucide-react";
 import Container from "@/components/container";
 import { Button } from "@/components/ui/button";
 import { experimentService } from "@/services/experiment";
-import { LiveExperimentSnapshot, RunningExperiment } from "@/features/experiment/models/ExperimentModels";
-import { ChartSeriesPoint, MetricCardProps } from "@/types/charts";
+import { ExperimentRunState } from "@/features/experiment/models/ExperimentModels";
+import { MetricCard } from "./components/MetricCard";
+import { PerformanceLineChart } from "./components/PerformanceLineChart";
 
-
-function coerceNumber(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return undefined;
-}
-
-function firstDefinedNumber(snapshot: LiveExperimentSnapshot, keys: string[]): number | undefined {
-  for (const key of keys) {
-    const value = coerceNumber(snapshot[key]);
-    if (value !== undefined) {
-      return value;
-    }
-  }
-
-  return undefined;
-}
 
 function pickStrings(values: unknown): string[] {
   if (!Array.isArray(values)) {
@@ -117,48 +93,159 @@ function formatDuration(start: string | undefined, end?: string | undefined): st
   return `${seconds}s`;
 }
 
-function MetricCard({ title, value, detail, icon }: MetricCardProps) {
-  return (
-    <div className="rounded-2xl border border-border bg-card/90 p-4 shadow-sm backdrop-blur">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm text-muted-foreground">{title}</p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
-          {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
-        </div>
-        <div className="rounded-xl border border-border bg-muted/60 p-2 text-muted-foreground">
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
+function normalizeStatus(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase();
 }
 
-export default function ExperimentMonitor() {
-  const [runningExperiments, setRunningExperiments] = useState<RunningExperiment[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
-  const [snapshot, setSnapshot] = useState<LiveExperimentSnapshot | null>(null);
-  const [snapshotRunId, setSnapshotRunId] = useState<number | null>(null);
-  const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "connected" | "error">("idle");
-  const [connectionRunId, setConnectionRunId] = useState<number | null>(null);
-  const [streamEvent, setStreamEvent] = useState("snapshot");
-  const [streamEventRunId, setStreamEventRunId] = useState<number | null>(null);
-  const [streamError, setStreamError] = useState<string | null>(null);
-  const [streamErrorRunId, setStreamErrorRunId] = useState<number | null>(null);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
-  const [lastUpdatedAtRunId, setLastUpdatedAtRunId] = useState<number | null>(null);
+function readRecordString(record: Record<string, any>, key: string): string | undefined {
+  const value = record[key];
 
-  const selectedExperiment = useMemo(
-    () => runningExperiments.find((experiment) => experiment.run_id === selectedRunId) ?? null,
-    [runningExperiments, selectedRunId],
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function inferExperimentRunStateStatus(experimentRunState: ExperimentRunState): string {
+  const explicitStatus = normalizeStatus(experimentRunState.status);
+  if (explicitStatus) {
+    return explicitStatus;
+  }
+
+  if (experimentRunState.finished_at) {
+    return "completed";
+  }
+
+  if (experimentRunState.started_at) {
+    return "running";
+  }
+
+  return "queued";
+}
+
+
+function getStatusTone(status: string): { label: string; description: string; badgeClass: string; dotClass: string; accent: string } {
+  const normalizedStatus = normalizeStatus(status);
+
+  if (normalizedStatus === "running") {
+    return {
+      label: "Running",
+      description: "Live SSE updates are active.",
+      badgeClass: "bg-primary text-primary-foreground",
+      dotClass: "bg-emerald-500",
+      accent: "#2563eb",
+    };
+  }
+
+  if (normalizedStatus === "completed") {
+    return {
+      label: "Completed",
+      description: "Experiment run completed",
+      badgeClass: "bg-emerald-600 text-white",
+      dotClass: "bg-emerald-500",
+      accent: "#16a34a",
+    };
+  }
+
+  if (normalizedStatus === "failed") {
+    return {
+      label: "Failed",
+      description: "The run ended with an error state.",
+      badgeClass: "bg-destructive text-destructive-foreground",
+      dotClass: "bg-red-500",
+      accent: "#dc2626",
+    };
+  }
+
+  if (normalizedStatus === "paused") {
+    return {
+      label: "Paused",
+      description: "The experiment run is currently paused.",
+      badgeClass: "bg-amber-500 text-white",
+      dotClass: "bg-amber-500",
+      accent: "#d97706",
+    };
+  }
+
+  if (normalizedStatus === "queued") {
+    return {
+      label: "Queued",
+      description: "The run is waiting to start.",
+      badgeClass: "bg-amber-500 text-white",
+      dotClass: "bg-amber-500",
+      accent: "#d97706",
+    };
+  }
+
+  return {
+    label: normalizedStatus ? normalizedStatus : "Unknown",
+    description: "No explicit status was reported.",
+    badgeClass: "bg-muted text-muted-foreground",
+    dotClass: "bg-slate-400",
+    accent: "#64748b",
+  };
+}
+
+function getExperimentRunStateDisplayName(experimentRunState: ExperimentRunState | null): string {
+  if (!experimentRunState) {
+    return "Select an experiment";
+  }
+
+  const record = experimentRunState as Record<string, any>;
+  const experimentRunStateName = record.experiment_name;
+  if (typeof experimentRunStateName === "string" && experimentRunStateName.length > 0) {
+    return experimentRunStateName;
+  }
+
+  return "Untitled experiment";
+}
+
+function getExperimentRunStateKey(experimentRunState: ExperimentRunState): string {
+  return experimentRunState.run_id;
+}
+
+
+export default function ExperimentMonitor() {
+  const [experimentRunStates, setExperimentRunStates] = useState<ExperimentRunState[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<ExperimentRunState | null>(null);
+  const [snapshotRunId, setSnapshotRunId] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const [connectionRunId, setConnectionRunId] = useState<string | null>(null);
+  const [streamEvent, setStreamEvent] = useState("snapshot");
+  const [streamEventRunId, setStreamEventRunId] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamErrorRunId, setStreamErrorRunId] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const [lastUpdatedAtRunId, setLastUpdatedAtRunId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const selectedExperimentRunState = useMemo(
+    () => experimentRunStates.find((experimentRunState) => getExperimentRunStateKey(experimentRunState) === selectedRunId) ?? null,
+    [experimentRunStates, selectedRunId],
   );
-  const activeSnapshot = selectedRunId !== null && snapshotRunId === selectedRunId ? snapshot : null;
+  const selectedStatus = selectedExperimentRunState ? inferExperimentRunStateStatus(selectedExperimentRunState) : "idle";
+  const statusTone = getStatusTone(selectedStatus);
+  const isLiveSelection = selectedRunId !== null && selectedStatus === "running";
+  const activeSnapshot = isLiveSelection && selectedRunId !== null && snapshotRunId === selectedRunId ? snapshot : null;
+  const currentRecord = (activeSnapshot ?? selectedExperimentRunState ?? {}) as Record<string, any>;
   const displayConnectionState =
     selectedRunId === null
       ? "idle"
-      : connectionRunId === selectedRunId
-        ? connectionState
-        : "connecting";
+      : isLiveSelection
+        ? connectionRunId === selectedRunId
+          ? connectionState
+          : "connecting"
+        : selectedStatus;
   const displayStreamEvent =
     selectedRunId !== null && streamEventRunId === selectedRunId ? streamEvent : "snapshot";
   const displayStreamError =
@@ -166,32 +253,47 @@ export default function ExperimentMonitor() {
   const displayLastUpdatedAt =
     selectedRunId !== null && lastUpdatedAtRunId === selectedRunId ? lastUpdatedAt : null;
 
+  const syncExperimentRunStates = async () => {
+    try {
+      const response = await experimentService.getAllExperimentStates();
+
+      const nextExperimentRunStates = response.body.experiment_states ?? [];
+
+      setExperimentRunStates(nextExperimentRunStates);
+      setSelectedRunId((currentRunId) => {
+        if (currentRunId !== null && nextExperimentRunStates.some((experimentRunState) => getExperimentRunStateKey(experimentRunState) === currentRunId)) {
+          return currentRunId;
+        }
+
+        const liveExperimentRunState = nextExperimentRunStates.find(
+          (experimentRunState) => inferExperimentRunStateStatus(experimentRunState) === "running",
+        );
+
+        return liveExperimentRunState
+          ? getExperimentRunStateKey(liveExperimentRunState)
+          : nextExperimentRunStates[0]?.run_id ?? null;
+      });
+    } catch (error) {
+      console.error("Failed to fetch experiments:", error);
+    }
+  };
+
   useEffect(() => {
-    const fetchRunningExperiments = async () => {
-      try {
-        const response = await experimentService.getRunningExperiment();
+    let cancelled = false;
 
-        const experiments = response.body.running_experiments;
-
-        setRunningExperiments(experiments);
-        setSelectedRunId((currentRunId) => {
-          if (currentRunId !== null && experiments.some((experiment) => experiment.run_id === currentRunId)) {
-            return currentRunId;
-          }
-
-          return experiments[0]?.run_id ?? null;
-        });
-
-      } catch (error) {
-        console.error("Failed to fetch running experiments:", error);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        void syncExperimentRunStates();
       }
-    };
+    });
 
-    fetchRunningExperiments();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (selectedRunId === null) {
+    if (selectedRunId === null || !isLiveSelection) {
       return;
     }
 
@@ -210,7 +312,7 @@ export default function ExperimentMonitor() {
         },
         onData: (data) => {
           if (data && typeof data === "object") {
-            setSnapshot(data as LiveExperimentSnapshot);
+            setSnapshot(data as ExperimentRunState);
             setSnapshotRunId(selectedRunId);
             setLastUpdatedAt(new Date().toISOString());
             setLastUpdatedAtRunId(selectedRunId);
@@ -231,52 +333,42 @@ export default function ExperimentMonitor() {
     return () => {
       controller.abort();
     };
-  }, [selectedRunId]);
+  }, [isLiveSelection, selectedRunId]);
 
-  const experimentName = activeSnapshot?.experiment_name ?? selectedExperiment?.experiment_name ?? "Select a run";
-  const status = String(activeSnapshot?.status ?? "live");
-  const progressPercent = Math.max(
-    0,
-    Math.min(
-      100,
-      firstDefinedNumber(activeSnapshot ?? {}, ["progress", "completion_percent"]) ?? (() => {
-        const completed = firstDefinedNumber(activeSnapshot ?? {}, ["completed_iterations", "iteration_completed", "iterations_completed"]);
-        const total = firstDefinedNumber(activeSnapshot ?? {}, ["total_iterations", "iteration_total", "iterations_total"]);
-        if (completed === undefined || !total) {
-          return 0;
-        }
-        return (completed / total) * 100;
-      })(),
-    ),
-  );
-  const completedIterations = firstDefinedNumber(activeSnapshot ?? {}, ["completed_iterations", "iteration_completed", "iterations_completed", "current_iteration"]);
-  const totalIterations = firstDefinedNumber(activeSnapshot ?? {}, ["total_iterations", "iteration_total", "iterations_total"]);
-  const inputTokens = firstDefinedNumber(activeSnapshot ?? {}, ["input_tokens"]);
-  const outputTokens = firstDefinedNumber(activeSnapshot ?? {}, ["output_tokens"]);
-  const tokensUsed = firstDefinedNumber(activeSnapshot ?? {}, ["tokens_used"]);
-  const requestTotal = firstDefinedNumber(activeSnapshot ?? {}, ["requests_total", "request_total"]);
-  const successfulRequests = firstDefinedNumber(activeSnapshot ?? {}, ["successful_requests"]);
-  const failedRequests = firstDefinedNumber(activeSnapshot ?? {}, ["failed_requests"]);
-  const timeoutRequests = firstDefinedNumber(activeSnapshot ?? {}, ["timeout_requests"]);
-  const retriedRequests = firstDefinedNumber(activeSnapshot ?? {}, ["retried_requests", "retries"]);
-  const latencyMs = firstDefinedNumber(activeSnapshot ?? {}, ["average_latency_ms", "latency_ms", "latency"]);
-  const processedItems = firstDefinedNumber(activeSnapshot ?? {}, ["processed_items", "data_processed"]);
-  const totalItems = firstDefinedNumber(activeSnapshot ?? {}, ["total_items", "data_total"]);
+  const experimentRunStateName = getExperimentRunStateDisplayName(activeSnapshot ?? selectedExperimentRunState);
+  const status = statusTone.label;
+  const tokensUsed = currentRecord["total_tokens"];
+  const totalRequests = currentRecord["total_tasks"];
+  const attemptedRequests = currentRecord["attempts"];
+  const successfulRequests = currentRecord["completed"];
+  const failedRequests = currentRecord["failed"];
+  const retriedRequests = currentRecord["retries"];
   const errorMessages = [
-    ...pickStrings(activeSnapshot?.error_messages),
-    ...pickStrings(activeSnapshot?.errors),
-    ...pickStrings(activeSnapshot?.logs),
+    ...pickStrings(currentRecord["last_error"]),
   ];
-  const timelineData: ChartSeriesPoint[] = useMemo(() => {
-    const candidatePairs: ChartSeriesPoint[] = [];
+  const progressPercent =
+    attemptedRequests === undefined || !attemptedRequests
+      ? 0
+      : Math.max(0, Math.min(100, (attemptedRequests / totalRequests) * 100));
+  const startedAt = readRecordString(currentRecord, "started_at");
+  const finishedAt = readRecordString(currentRecord, "finished_at");
+  const updatedAt = readRecordString(currentRecord, "updated_at");
 
-    const iterationProgress = progressPercent || 0;
-    candidatePairs.push(["Start", 0]);
-    candidatePairs.push(["Current", Math.round(iterationProgress)]);
-    candidatePairs.push(["Target", 100]);
+  const startTime = startedAt ? new Date(startedAt).getTime() : 0;
+  const endTime = finishedAt
+    ? new Date(finishedAt).getTime()
+    : updatedAt
+      ? new Date(updatedAt).getTime()
+      : now;
 
-    return candidatePairs;
-  }, [progressPercent]);
+  const elapsedSeconds = startTime && endTime > startTime
+    ? (endTime - startTime) / 1000
+    : 0;
+  const elapsedMinutes = elapsedSeconds / 60;
+
+  const tokensPerRequest = attemptedRequests > 0 ? tokensUsed / attemptedRequests : 0;
+  const requestsPerMinute = elapsedMinutes > 0 ? attemptedRequests / elapsedMinutes : 0;
+  const tokensPerMinute = elapsedMinutes > 0 ? tokensUsed / elapsedMinutes : 0;
 
   const progressOption: EChartsOption = {
     backgroundColor: "transparent",
@@ -294,7 +386,7 @@ export default function ExperimentMonitor() {
           show: true,
           width: 16,
           itemStyle: {
-            color: "#2563eb",
+            color: statusTone.accent,
           },
         },
         axisLine: {
@@ -310,7 +402,7 @@ export default function ExperimentMonitor() {
         anchor: { show: false },
         title: {
           offsetCenter: [0, "48%"],
-          color: "#64748b",
+          color: statusTone.accent,
           fontSize: 13,
         },
         detail: {
@@ -319,45 +411,9 @@ export default function ExperimentMonitor() {
           formatter: "{value}%",
           fontSize: 28,
           fontWeight: 700,
-          color: "inherit",
+          color: statusTone.accent,
         },
         data: [{ value: Math.round(progressPercent), name: "Completion" }],
-      },
-    ],
-  };
-
-  const tokenChart: EChartsOption = {
-    backgroundColor: "transparent",
-    tooltip: {
-      trigger: "item",
-    },
-    legend: {
-      bottom: 0,
-      icon: "circle",
-      textStyle: {
-        color: "#64748b",
-      },
-    },
-    series: [
-      {
-        name: "Tokens",
-        type: "pie",
-        radius: ["48%", "72%"],
-        center: ["50%", "42%"],
-        itemStyle: {
-          borderRadius: 10,
-          borderColor: "var(--color-card)",
-          borderWidth: 3,
-        },
-        label: {
-          color: "#0f172a",
-          formatter: "{b}\n{c}",
-        },
-        data: [
-          { value: inputTokens ?? 0, name: "Input" },
-          { value: outputTokens ?? 0, name: "Output" },
-          { value: Math.max(0, (tokensUsed ?? 0) - (inputTokens ?? 0) - (outputTokens ?? 0)), name: "Other" },
-        ],
       },
     ],
   };
@@ -389,17 +445,16 @@ export default function ExperimentMonitor() {
       {
         type: "bar",
         data: [
-          requestTotal ?? 0,
+          totalRequests ?? 0,
           successfulRequests ?? 0,
           failedRequests ?? 0,
-          timeoutRequests ?? 0,
           retriedRequests ?? 0,
         ],
         barWidth: 22,
         itemStyle: {
           borderRadius: [8, 8, 0, 0],
           color: (params) => {
-            const palette = ["#1d4ed8", "#0f766e", "#b91c1c", "#d97706", "#475569"];
+            const palette = [statusTone.accent, "#0f766e", "#b91c1c", "#d97706", "#475569"];
             return palette[params.dataIndex as number] ?? "#1d4ed8";
           },
         },
@@ -407,48 +462,30 @@ export default function ExperimentMonitor() {
     ],
   };
 
-  const throughputChart: EChartsOption = {
-    backgroundColor: "transparent",
-    tooltip: {
-      trigger: "axis",
-    },
-    grid: {
-      left: 8,
-      right: 8,
-      top: 20,
-      bottom: 0,
-      containLabel: true,
-    },
-    xAxis: {
-      type: "category",
-      data: timelineData.map(([label]) => label),
-      axisLine: { lineStyle: { color: "rgba(148, 163, 184, 0.5)" } },
-      axisLabel: { color: "#64748b" },
-    },
-    yAxis: {
-      type: "value",
-      axisLabel: { color: "#64748b" },
-      splitLine: { lineStyle: { color: "rgba(148, 163, 184, 0.16)" } },
-    },
-    series: [
-      {
-        type: "line",
-        smooth: true,
-        symbolSize: 10,
-        lineStyle: {
-          width: 3,
-          color: "#2563eb",
-        },
-        itemStyle: {
-          color: "#2563eb",
-        },
-        areaStyle: {
-          color: "rgba(37, 99, 235, 0.16)",
-        },
-        data: timelineData.map(([, value]) => value),
-      },
-    ],
-  };
+
+  const groupedExperimentRunStates = useMemo(() => {
+    const runningExperimentRunStates: ExperimentRunState[] = [];
+    const completedExperimentRunStates: ExperimentRunState[] = [];
+    const other: ExperimentRunState[] = [];
+
+    for (const experimentRunState of experimentRunStates) {
+      const status = inferExperimentRunStateStatus(experimentRunState);
+
+      if (status === "running") {
+        runningExperimentRunStates.push(experimentRunState);
+      } else if (status === "completed") {
+        completedExperimentRunStates.push(experimentRunState);
+      } else {
+        other.push(experimentRunState);
+      }
+    }
+
+    return {
+      running: runningExperimentRunStates,
+      completed: completedExperimentRunStates,
+      other,
+    };
+  }, [experimentRunStates]);
 
   return (
     <Container className="py-6">
@@ -458,87 +495,163 @@ export default function ExperimentMonitor() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Experiment queue</p>
-                <h2 className="text-lg font-semibold">Running runs</h2>
+                <h2 className="text-lg font-semibold">All experiments</h2>
               </div>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  void (async () => {
-                    try {
-                      const response = await experimentService.getRunningExperiment();
-                      setRunningExperiments(response.body.running_experiments);
-                    } catch (error) {
-                      console.error("Failed to refresh running experiments:", error);
-                    }
-                  })();
+                  void syncExperimentRunStates();
                 }}
-                aria-label="Refresh running experiments"
+                aria-label="Refresh experiments"
               >
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
 
-            <div className="mt-4 space-y-2">
-              {runningExperiments.length === 0 ? (
+            <div className="mt-4 space-y-4">
+              {experimentRunStates.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-                  No active runs right now.
+                  No experiments found.
                 </div>
               ) : (
-                runningExperiments.map((experiment) => (
-                  <Button
-                    key={experiment.run_id}
-                    variant={selectedRunId === experiment.run_id ? "secondary" : "ghost"}
-                    className="h-auto w-full justify-start rounded-2xl px-4 py-3 text-left"
-                    onClick={() => setSelectedRunId(experiment.run_id)}
-                  >
-                    <div className="flex w-full items-center justify-between gap-3">
-                      <div>
-                        <div className="font-medium truncate">
-                          {experiment.experiment_name}
-                        </div>
+                <>
+                  {groupedExperimentRunStates.running.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Running</p>
+                      <div className="space-y-2">
+                        {groupedExperimentRunStates.running.map((experimentRunState) => {
+                          const experimentRunStateKey = getExperimentRunStateKey(experimentRunState);
+                          const experimentRunStateTone = getStatusTone(inferExperimentRunStateStatus(experimentRunState));
+
+                          return (
+                            <Button
+                              key={experimentRunStateKey}
+                              variant={selectedRunId === experimentRunStateKey ? "secondary" : "ghost"}
+                              className="h-auto w-full justify-start rounded-2xl px-4 py-3 text-left"
+                              onClick={() => setSelectedRunId(experimentRunStateKey)}
+                            >
+                              <div className="flex w-full items-center justify-between gap-3">
+                                <div className="min-w-0 text-left">
+                                  <div className="truncate font-medium">
+                                    {getExperimentRunStateDisplayName(experimentRunState)}
+                                  </div>
+                                  <div className="mt-1 min-w-0 truncate text-xs text-muted-foreground">
+                                    Run #{experimentRunState.run_id}
+                                  </div>
+                                </div>
+                                <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${experimentRunStateTone.badgeClass}`}>
+                                  {experimentRunStateTone.label}
+                                </span>
+                              </div>
+                            </Button>
+                          );
+                        })}
                       </div>
-                      {selectedRunId === experiment.run_id ? (
-                        <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">Live</span>
-                      ) : null}
                     </div>
-                  </Button>
-                ))
+                  ) : null}
+
+                  {groupedExperimentRunStates.completed.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Completed</p>
+                      <div className="space-y-2">
+                        {groupedExperimentRunStates.completed.map((experimentRunState) => {
+                          const experimentRunStateKey = getExperimentRunStateKey(experimentRunState);
+                          const experimentRunStateTone = getStatusTone(inferExperimentRunStateStatus(experimentRunState));
+
+                          return (
+                            <Button
+                              key={experimentRunStateKey}
+                              variant={selectedRunId === experimentRunStateKey ? "secondary" : "ghost"}
+                              className="h-auto w-full justify-start rounded-2xl px-4 py-3 text-left"
+                              onClick={() => setSelectedRunId(experimentRunStateKey)}
+                            >
+                              <div className="flex w-full items-center justify-between gap-3">
+                                <div className="min-w-0 text-left">
+                                  <div className="truncate font-medium">
+                                    {getExperimentRunStateDisplayName(experimentRunState)}
+                                  </div>
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    {formatDate(experimentRunState.finished_at)}
+                                  </div>
+                                </div>
+                                <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${experimentRunStateTone.badgeClass}`}>
+                                  {experimentRunStateTone.label}
+                                </span>
+                              </div>
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {groupedExperimentRunStates.other.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Other</p>
+                      <div className="space-y-2">
+                        {groupedExperimentRunStates.other.map((experimentRunState) => {
+                          const experimentRunStateKey = getExperimentRunStateKey(experimentRunState);
+                          const experimentRunStateTone = getStatusTone(inferExperimentRunStateStatus(experimentRunState));
+
+                          return (
+                            <Button
+                              key={experimentRunStateKey}
+                              variant={selectedRunId === experimentRunStateKey ? "secondary" : "ghost"}
+                              className="h-auto w-full justify-start rounded-2xl px-4 py-3 text-left"
+                              onClick={() => setSelectedRunId(experimentRunStateKey)}
+                            >
+                              <div className="flex w-full items-center justify-between gap-3">
+                                <div className="min-w-0 text-left">
+                                  <div className="truncate font-medium">
+                                    {getExperimentRunStateDisplayName(experimentRunState)}
+                                  </div>
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    {experimentRunState.status ?? "queued"}
+                                  </div>
+                                </div>
+                                <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${experimentRunStateTone.badgeClass}`}>
+                                  {experimentRunStateTone.label}
+                                </span>
+                              </div>
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
               )}
             </div>
           </div>
 
           <div className="rounded-3xl border border-border bg-card/90 p-4 shadow-sm backdrop-blur">
-            <p className="text-sm text-muted-foreground">Connection</p>
+            <p className="text-sm text-muted-foreground">Status</p>
             <div className="mt-2 flex items-center gap-2 text-sm font-medium">
-              <span
-                className={
-                  displayConnectionState === "connected"
-                    ? "h-2.5 w-2.5 rounded-full bg-emerald-500"
+              <span className={`h-2.5 w-2.5 rounded-full ${statusTone.dotClass}`} />
+              {selectedRunId === null
+                ? "Waiting for a selection"
+                : isLiveSelection
+                  ? displayConnectionState === "connected"
+                    ? "Receiving live SSE updates"
                     : displayConnectionState === "connecting"
-                      ? "h-2.5 w-2.5 rounded-full bg-amber-500"
+                      ? "Connecting to stream"
                       : displayConnectionState === "error"
-                        ? "h-2.5 w-2.5 rounded-full bg-red-500"
-                        : "h-2.5 w-2.5 rounded-full bg-slate-400"
-                }
-              />
-              {displayConnectionState === "connected"
-                ? "Receiving live SSE updates"
-                : displayConnectionState === "connecting"
-                  ? "Connecting to stream"
-                  : displayConnectionState === "error"
-                    ? "Stream unavailable"
-                    : "Waiting for a selection"}
+                        ? "Stream unavailable"
+                        : "Preparing live stream"
+                  : statusTone.description}
             </div>
             <div className="mt-3 space-y-2 text-sm text-muted-foreground">
               <div className="flex items-center justify-between gap-3">
                 <span>Last event</span>
-                <span className="font-medium text-foreground">{displayStreamEvent}</span>
+                <span className="font-medium text-foreground">{selectedRunId === null ? "--" : isLiveSelection ? displayStreamEvent : status}</span>
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span>Updated</span>
-                <span className="font-medium text-foreground">{displayLastUpdatedAt ? formatDate(displayLastUpdatedAt) : "--"}</span>
+                <span className="font-medium text-foreground">
+                  {isLiveSelection ? (displayLastUpdatedAt ? formatDate(displayLastUpdatedAt) : "--") : formatDate(finishedAt ?? startedAt)}
+                </span>
               </div>
             </div>
             {displayStreamError ? (
@@ -553,19 +666,23 @@ export default function ExperimentMonitor() {
           <section className="overflow-hidden rounded-[28px] border border-border bg-linear-to-br from-background via-background to-primary/5 p-6 shadow-sm">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
               <div className="max-w-3xl space-y-4">
-                <div>
-                  <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{experimentName}</h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    Monitor live progress, token consumption, request health, and the latest run messages from the active SSE stream.
+                <div className="space-y-3">
+                  <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{experimentRunStateName}</h1>
+                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                    {isLiveSelection
+                      ? "Monitor live progress, token consumption, request health, and the latest messages from the active SSE stream."
+                      : statusTone.description}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="rounded-full bg-primary px-3 py-1 font-medium text-primary-foreground">{status}</span>
-                  <span className="rounded-full border border-border bg-card/90 px-3 py-1 text-muted-foreground">
-                    Run #{selectedExperiment?.run_id ?? "--"}
+                  <span className={`rounded-full px-3 py-1 font-medium ${statusTone.badgeClass}`}>
+                    {status}
                   </span>
                   <span className="rounded-full border border-border bg-card/90 px-3 py-1 text-muted-foreground">
-                    {formatDuration(activeSnapshot?.started_at ?? activeSnapshot?.start_time, activeSnapshot?.finished_at ?? activeSnapshot?.end_time)} elapsed
+                    Run #{selectedExperimentRunState?.run_id ?? "--"}
+                  </span>
+                  <span className="rounded-full border border-border bg-card/90 px-3 py-1 text-muted-foreground">
+                    {finishedAt ? formatDuration(startedAt, finishedAt) : formatDuration(startedAt, updatedAt)} {isLiveSelection ? "elapsed" : "total"}
                   </span>
                 </div>
               </div>
@@ -573,13 +690,13 @@ export default function ExperimentMonitor() {
               <div className="grid gap-3 sm:grid-cols-2 lg:min-w-90 lg:max-w-105">
                 <div className="rounded-2xl border border-border bg-card/95 p-4 shadow-sm">
                   <p className="text-sm text-muted-foreground">Execution window</p>
-                  <p className="mt-2 text-sm font-medium">{formatDate(activeSnapshot?.started_at ?? activeSnapshot?.start_time)}</p>
-                  <p className="text-sm text-muted-foreground">→ {formatDate(activeSnapshot?.finished_at ?? activeSnapshot?.end_time)}</p>
+                  <p className="mt-2 text-sm font-medium">{formatDate(startedAt)}</p>
+                  <p className="text-sm text-muted-foreground">→ {formatDate(finishedAt)}</p>
                 </div>
                 <div className="rounded-2xl border border-border bg-card/95 p-4 shadow-sm">
-                  <p className="text-sm text-muted-foreground">Data processed</p>
-                  <p className="mt-2 text-2xl font-semibold">{formatNumber(processedItems)}</p>
-                  <p className="text-sm text-muted-foreground">of {formatNumber(totalItems)} items</p>
+                  <p className="text-sm text-muted-foreground">Requests processed</p>
+                  <p className="mt-2 text-2xl font-semibold">{formatNumber(attemptedRequests)}</p>
+                  <p className="text-sm text-muted-foreground">of {formatNumber(totalRequests)} items</p>
                 </div>
               </div>
             </div>
@@ -587,28 +704,15 @@ export default function ExperimentMonitor() {
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
-              title="Iterations completed"
-              value={totalIterations ? `${formatNumber(completedIterations)} / ${formatNumber(totalIterations)}` : formatNumber(completedIterations)}
-              detail={`${Math.round(progressPercent)}% complete`}
-              icon={<Clock3 className="h-4 w-4" />}
-            />
-            <MetricCard
               title="Token usage"
               value={formatNumber(tokensUsed)}
-              detail={`Input ${formatNumber(inputTokens)} · Output ${formatNumber(outputTokens)}`}
               icon={<ArrowRightLeft className="h-4 w-4" />}
             />
             <MetricCard
               title="Request volume"
-              value={formatNumber(requestTotal)}
+              value={formatNumber(totalRequests)}
               detail={`Success ${formatNumber(successfulRequests)} · Failed ${formatNumber(failedRequests)}`}
               icon={<RefreshCw className="h-4 w-4" />}
-            />
-            <MetricCard
-              title="Average latency"
-              value={latencyMs === undefined ? "--" : `${formatNumber(latencyMs)} ms`}
-              detail={`Retries ${formatNumber(retriedRequests)}`}
-              icon={<Activity className="h-4 w-4" />}
             />
           </section>
 
@@ -617,10 +721,14 @@ export default function ExperimentMonitor() {
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold">Completion</h2>
-                  <p className="text-sm text-muted-foreground">Derived from the latest snapshot or iteration counters.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {isLiveSelection
+                      ? "Derived from the latest live snapshot or iteration counters."
+                      : "Derived from the selected experiment record."}
+                  </p>
                 </div>
                 <span className="rounded-full border border-border bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
-                  Live gauge
+                  {isLiveSelection ? "Live gauge" : "Final snapshot"}
                 </span>
               </div>
               <div className="h-80">
@@ -632,19 +740,7 @@ export default function ExperimentMonitor() {
               <div className="rounded-3xl border border-border bg-card/90 p-5 shadow-sm backdrop-blur">
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-lg font-semibold">Token split</h2>
-                    <p className="text-sm text-muted-foreground">Input, output, and remaining usage.</p>
-                  </div>
-                </div>
-                <div className="h-75">
-                  <ReactECharts option={tokenChart} style={{ height: "100%", width: "100%" }} />
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-border bg-card/90 p-5 shadow-sm backdrop-blur">
-                <div className="mb-4 flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-lg font-semibold">Traffic breakdown</h2>
+                    <h2 className="text-lg font-semibold">Requests status</h2>
                     <p className="text-sm text-muted-foreground">Current request health, retries, and failures.</p>
                   </div>
                 </div>
@@ -656,74 +752,104 @@ export default function ExperimentMonitor() {
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
-            <div className="rounded-3xl border border-border bg-card/90 p-5 shadow-sm backdrop-blur">
-              <div className="mb-4 flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-lg font-semibold">Runtime trend</h2>
-                  <p className="text-sm text-muted-foreground">A lightweight live trend view built from the current snapshot.</p>
-                </div>
+            {/* LEFT SIDE */}
+            <div className="space-y-6">
+              {/* Performance metrics */}
+              <div className="grid gap-4 sm:grid-cols-3">
+                <MetricCard
+                  title="Tokens / Request"
+                  value={tokensPerRequest.toFixed(1)}
+                  detail="Average tokens per request"
+                  icon={<Coins className="h-4 w-4" />}
+                />
+
+                <MetricCard
+                  title="Requests / Minute"
+                  value={requestsPerMinute.toFixed(1)}
+                  detail="Average request throughput"
+                  icon={<Activity className="h-4 w-4" />}
+                />
+
+                <MetricCard
+                  title="Tokens / Minute"
+                  value={tokensPerMinute.toFixed(1)}
+                  detail="Average token throughput"
+                  icon={<Zap className="h-4 w-4" />}
+                />
               </div>
-              <div className="h-70">
-                <ReactECharts option={throughputChart} style={{ height: "100%", width: "100%" }} />
-              </div>
+
             </div>
 
-            <div className="space-y-6">
+            {/* RIGHT SIDE */}
+            <div>
               <div className="rounded-3xl border border-border bg-card/90 p-5 shadow-sm backdrop-blur">
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-lg font-semibold">Live messages</h2>
-                    <p className="text-sm text-muted-foreground">Errors and emitted messages from the active run.</p>
+                    <h2 className="text-lg font-semibold">
+                      {isLiveSelection
+                        ? "Live messages"
+                        : statusTone.label === "Failed"
+                          ? "Failure details"
+                          : "Run messages"}
+                    </h2>
+
+                    <p className="text-sm text-muted-foreground">
+                      {isLiveSelection
+                        ? "Errors and emitted messages from the active run."
+                        : "Messages captured on the selected experiment record."}
+                    </p>
                   </div>
+
                   <ShieldAlert className="h-5 w-5 text-muted-foreground" />
                 </div>
+
                 <div className="space-y-3">
                   {errorMessages.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-                      No messages captured yet.
+                      {isLiveSelection
+                        ? "No messages captured yet."
+                        : "No archived messages found."}
                     </div>
                   ) : (
                     errorMessages.slice(0, 6).map((message, index) => (
-                      <div key={`${message}-${index}`} className="rounded-2xl border border-border bg-muted/30 p-3 text-sm leading-6 text-foreground">
+                      <div
+                        key={`${message}-${index}`}
+                        className="rounded-2xl border border-border bg-muted/30 p-3 text-sm leading-6 text-foreground"
+                      >
                         <span className="mr-2 inline-flex rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-destructive">
-                          {message.toLowerCase().includes("error") ? "error" : "message"}
+                          {message.toLowerCase().includes("error")
+                            ? "error"
+                            : "message"}
                         </span>
+
                         {message}
                       </div>
                     ))
                   )}
                 </div>
               </div>
-
-              <div className="rounded-3xl border border-border bg-card/90 p-5 shadow-sm backdrop-blur">
-                <div className="mb-4 flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-lg font-semibold">Request context</h2>
-                    <p className="text-sm text-muted-foreground">Quick readout matching the sketch on the left.</p>
-                  </div>
-                  <TriangleAlert className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-border bg-muted/30 p-3">
-                    <p className="text-xs text-muted-foreground">Retries</p>
-                    <p className="mt-1 text-xl font-semibold">{formatNumber(retriedRequests)}</p>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-muted/30 p-3">
-                    <p className="text-xs text-muted-foreground">Failures</p>
-                    <p className="mt-1 text-xl font-semibold">{formatNumber(failedRequests)}</p>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-muted/30 p-3">
-                    <p className="text-xs text-muted-foreground">Timeouts</p>
-                    <p className="mt-1 text-xl font-semibold">{formatNumber(timeoutRequests)}</p>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-muted/30 p-3">
-                    <p className="text-xs text-muted-foreground">Requests/sec</p>
-                    <p className="mt-1 text-xl font-semibold">{requestTotal ? formatNumber(requestTotal / Math.max(1, progressPercent || 1), 2) : "--"}</p>
-                  </div>
-                </div>
-              </div>
             </div>
           </section>
+
+          <div className="grid gap-6 xl:grid-cols-3">
+            <PerformanceLineChart
+              title="Tokens / Request"
+              value={tokensPerRequest}
+              unit="tokens"
+            />
+
+            <PerformanceLineChart
+              title="Requests / Minute"
+              value={requestsPerMinute}
+              unit="requests/min"
+            />
+
+            <PerformanceLineChart
+              title="Tokens / Minute"
+              value={tokensPerMinute}
+              unit="tokens/min"
+            />
+          </div>
         </main>
       </div>
     </Container>

@@ -1,6 +1,6 @@
 import {
   ExperimentListResponse,
-  RunningExperimentListResponse,
+  ExperimentStateListResponse,
 } from "@/features/experiment/models/ExperimentModels";
 import { baseApiService } from "@/services/api";
 import type { BaseResponse } from "@/types/api";
@@ -14,6 +14,11 @@ class ExperimentService {
     });
   }
 
+  async getAllExperimentStates(): Promise<BaseResponse<ExperimentStateListResponse>> {
+    return baseApiService.get<ExperimentStateListResponse>({
+      endpoint: `${this.BASE_PATH}/states`,
+    });
+  }
 
   async runExperiment(experimentName: string): Promise<BaseResponse<string>> {
     return baseApiService.get<string>({
@@ -21,14 +26,9 @@ class ExperimentService {
     });
   }
 
-  async getRunningExperiment(): Promise<BaseResponse<RunningExperimentListResponse>> {
-    return baseApiService.get<RunningExperimentListResponse>({
-      endpoint: `${this.BASE_PATH}/running-experiments`,
-    });
-  }
 
   async subscribeToExperimentRun(
-    runId: number,
+    runId: string,
     handlers: {
       signal?: AbortSignal;
       onEvent: (event: string) => void;
@@ -43,15 +43,6 @@ class ExperimentService {
       onData: handlers.onData,
     });
   }
-
-//   async getGeneratedDataFromLLM(
-//     data: GenerateDataFromLLMArgs,
-//   ): Promise<BaseResponse<GenerateDataFromLLMResponse>> {
-//     return baseApiService.post<GenerateDataFromLLMResponse>({
-//       endpoint: `${this.BASE_PATH}/generate-variable-values`,
-//       data,
-//     });
-//   }
 }
 
 export const experimentService = new ExperimentService();

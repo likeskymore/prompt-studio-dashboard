@@ -27,8 +27,9 @@ export default function SideNav() {
       </button>
       <aside
         className={cn(
-          "fixed bottom-0 left-0 top-0 z-40 flex h-dvh w-44 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground tablet:sticky tablet:translate-x-0",
-          "transition-transform duration-300 ease-in-out",
+          "relative flex min-h-screen w-44 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground",
+          "tablet:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 tablet:static",
           isOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >

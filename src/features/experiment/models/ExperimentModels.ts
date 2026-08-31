@@ -10,6 +10,14 @@ export type ExperimentRunSample = {
   total_tokens: number;
 };
 
+export type Llm = {
+  id: number;
+  base_model: string;
+  name: string;
+  model: string;
+}
+
+
 export type ExperimentRunState = {
   run_id: string;
   experiment_name: string;
@@ -25,7 +33,12 @@ export type ExperimentRunState = {
   retries: number;
   total_tokens: number;
   last_error?: string;
-  samples: ExperimentRunSample[];
+  total_latency_ms: number;
+  latency_count: number;
+  p50_latency_ms: number;
+  p95_latency_ms: number;
+  p99_latency_ms: number;
+  latency_samples: number[];
 };
 
 export type Experiment = {
@@ -41,4 +54,8 @@ export type ExperimentListResponse = {
 
 export type ExperimentStateListResponse = {
   experiment_states: ExperimentRunState[];
+};
+
+export type LlmListResponse = {
+  models: Llm[];
 };

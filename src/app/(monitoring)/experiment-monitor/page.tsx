@@ -4,108 +4,19 @@
 import { useEffect, useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
-import { Activity, ArrowRightLeft, Coins, RefreshCw, ShieldAlert, Zap } from "lucide-react";
+import { Activity, ArrowRightLeft, Clock3, Coins, RefreshCw, ShieldAlert, Zap } from "lucide-react";
 import Container from "@/components/container";
 import { Button } from "@/components/ui/button";
-import { experimentService } from "@/services/experiment";
-import { ExperimentRunState } from "@/features/experiment/models/ExperimentModels";
+import { ExperimentRunState, Llm } from "@/features/experiment/models/ExperimentModels";
 import { MetricCard } from "./components/MetricCard";
 import { PerformanceLineChart } from "./components/PerformanceLineChart";
+import { formatDate, formatDuration, formatNumber, pickStrings } from "@/lib/utils";
 
-
-function pickStrings(values: unknown): string[] {
-  if (!Array.isArray(values)) {
-    return [];
-  }
-
-  return values
-    .map((item) => {
-      if (typeof item === "string") {
-        return item;
-      }
-
-      if (item && typeof item === "object") {
-        const record = item as Record<string, unknown>;
-        const text = record.message ?? record.text ?? record.event;
-
-        if (typeof text === "string") {
-          return text;
-        }
-      }
-
-      return "";
-    })
-    .filter((item) => item.length > 0);
-}
-
-function formatNumber(value: number | undefined, fractionDigits = 0): string {
-  if (value === undefined || Number.isNaN(value)) {
-    return "--";
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: fractionDigits,
-    minimumFractionDigits: fractionDigits,
-  }).format(value);
-}
-
-function formatDate(value: string | undefined): string {
-  if (!value) {
-    return "--";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function formatDuration(start: string | undefined, end?: string | undefined): string {
-  if (!start) {
-    return "--";
-  }
-
-  const startTime = new Date(start).getTime();
-  const finishTime = end ? new Date(end).getTime() : Date.now();
-
-  if (Number.isNaN(startTime) || Number.isNaN(finishTime)) {
-    return "--";
-  }
-
-  const totalSeconds = Math.max(0, Math.floor((finishTime - startTime) / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  }
-
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-
-  return `${seconds}s`;
-}
 
 function normalizeStatus(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-function readRecordString(record: Record<string, any>, key: string): string | undefined {
-  const value = record[key];
-
-  if (typeof value === "string" && value.length > 0) {
-    return value;
-  }
-
-  return undefined;
-}
 
 function inferExperimentRunStateStatus(experimentRunState: ExperimentRunState): string {
   const explicitStatus = normalizeStatus(experimentRunState.status);
@@ -219,15 +130,8 @@ export default function ExperimentMonitor() {
   const [streamErrorRunId, setStreamErrorRunId] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [lastUpdatedAtRunId, setLastUpdatedAtRunId] = useState<string | null>(null);
+  const [currentExperimentLlms, setCurrentExperimentLlms] = useState<Llm[]>([]);
   const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
 
   const selectedExperimentRunState = useMemo(
     () => experimentRunStates.find((experimentRunState) => getExperimentRunStateKey(experimentRunState) === selectedRunId) ?? null,
@@ -253,42 +157,103 @@ export default function ExperimentMonitor() {
   const displayLastUpdatedAt =
     selectedRunId !== null && lastUpdatedAtRunId === selectedRunId ? lastUpdatedAt : null;
 
-  const syncExperimentRunStates = async () => {
+  const syncExperimentRunStates = async (signal?: AbortSignal) => {
     try {
-      const response = await experimentService.getAllExperimentStates();
+      const response = await fetch("/api/experiments/states", {
+        signal,
+      });
 
-      const nextExperimentRunStates = response.body.experiment_states ?? [];
+      if (!response.ok) {
+        throw new Error("Failed to fetch experiment states");
+      }
+
+      const data = await response.json();
+
+      const nextExperimentRunStates: ExperimentRunState[] =
+        data.experiment_states ?? [];
 
       setExperimentRunStates(nextExperimentRunStates);
+
       setSelectedRunId((currentRunId) => {
-        if (currentRunId !== null && nextExperimentRunStates.some((experimentRunState) => getExperimentRunStateKey(experimentRunState) === currentRunId)) {
+        if (
+          currentRunId !== null &&
+          nextExperimentRunStates.some(
+            (experimentRunState) =>
+              getExperimentRunStateKey(experimentRunState) === currentRunId,
+          )
+        ) {
           return currentRunId;
         }
 
-        const liveExperimentRunState = nextExperimentRunStates.find(
-          (experimentRunState) => inferExperimentRunStateStatus(experimentRunState) === "running",
-        );
+        const liveExperimentRunState =
+          nextExperimentRunStates.find(
+            (experimentRunState) =>
+              inferExperimentRunStateStatus(experimentRunState) === "running",
+          );
 
         return liveExperimentRunState
           ? getExperimentRunStateKey(liveExperimentRunState)
           : nextExperimentRunStates[0]?.run_id ?? null;
       });
     } catch (error) {
-      console.error("Failed to fetch experiments:", error);
+      // Don't report an intentional cancellation as an error
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+
+      console.error("Failed to fetch experiment states:", error);
     }
   };
 
   useEffect(() => {
-    let cancelled = false;
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const fetchExperimentModels = async () => {
+      const experimentName = selectedExperimentRunState?.experiment_name;
+
+      if (!experimentName) {
+        setCurrentExperimentLlms([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/experiment/${encodeURIComponent(experimentName)}/models`,
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch experiment models");
+        }
+
+        const data = await response.json();
+
+        setCurrentExperimentLlms(data.models ?? []);
+      } catch (error) {
+        console.error("Failed to fetch experiment models:", error);
+        setCurrentExperimentLlms([]);
+      }
+    };
+
+    void fetchExperimentModels();
+  }, [selectedExperimentRunState]);
+
+  useEffect(() => {
+    const controller = new AbortController();
 
     queueMicrotask(() => {
-      if (!cancelled) {
-        void syncExperimentRunStates();
+      if (!controller.signal.aborted) {
+        void syncExperimentRunStates(controller.signal);
       }
     });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 
@@ -299,36 +264,93 @@ export default function ExperimentMonitor() {
 
     const controller = new AbortController();
 
-    void experimentService
-      .subscribeToExperimentRun(selectedRunId, {
-        signal: controller.signal,
-        onEvent: (event) => {
-          setStreamEvent(event);
-          setStreamEventRunId(selectedRunId);
-          setConnectionState("connected");
-          setConnectionRunId(selectedRunId);
-          setStreamError(null);
-          setStreamErrorRunId(null);
-        },
-        onData: (data) => {
-          if (data && typeof data === "object") {
-            setSnapshot(data as ExperimentRunState);
-            setSnapshotRunId(selectedRunId);
-            setLastUpdatedAt(new Date().toISOString());
-            setLastUpdatedAtRunId(selectedRunId);
+    const connectToEvents = async () => {
+      try {
+        const response = await fetch(
+          `/api/experiment-run/${selectedRunId}/events`,
+          {
+            signal: controller.signal,
+            headers: {
+              Accept: "text/event-stream",
+            },
+          },
+        );
+
+        if (!response.ok || !response.body) {
+          throw new Error("Failed to connect to experiment events");
+        }
+
+        setConnectionState("connected");
+        setConnectionRunId(selectedRunId);
+        setStreamError(null);
+        setStreamErrorRunId(null);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        let buffer = "";
+
+        while (!controller.signal.aborted) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            break;
           }
-        },
-      })
-      .catch((error) => {
+
+          buffer += decoder.decode(value, { stream: true });
+
+          const events = buffer.split("\n\n");
+          buffer = events.pop() ?? "";
+
+          for (const event of events) {
+            const eventLine = event
+              .split("\n")
+              .find((line) => line.startsWith("event:"));
+
+            const dataLine = event
+              .split("\n")
+              .find((line) => line.startsWith("data:"));
+
+            if (eventLine) {
+              setStreamEvent(
+                eventLine.slice("event:".length).trim(),
+              );
+              setStreamEventRunId(selectedRunId);
+            }
+
+            if (dataLine) {
+              const data = JSON.parse(
+                dataLine.slice("data:".length).trim(),
+              );
+
+              if (data && typeof data === "object") {
+                setSnapshot(data as ExperimentRunState);
+                setSnapshotRunId(selectedRunId);
+                setLastUpdatedAt(new Date().toISOString());
+                setLastUpdatedAtRunId(selectedRunId);
+              }
+            }
+          }
+        }
+
+        reader.releaseLock();
+      } catch (error) {
         if ((error as Error).name === "AbortError") {
           return;
         }
 
         setConnectionState("error");
         setConnectionRunId(selectedRunId);
-        setStreamError(error instanceof Error ? error.message : "Failed to connect to the live run stream.");
+        setStreamError(
+          error instanceof Error
+            ? error.message
+            : "Failed to connect to the live run stream.",
+        );
         setStreamErrorRunId(selectedRunId);
-      });
+      }
+    };
+
+    void connectToEvents();
 
     return () => {
       controller.abort();
@@ -350,9 +372,9 @@ export default function ExperimentMonitor() {
     attemptedRequests === undefined || !attemptedRequests
       ? 0
       : Math.max(0, Math.min(100, (attemptedRequests / totalRequests) * 100));
-  const startedAt = readRecordString(currentRecord, "started_at");
-  const finishedAt = readRecordString(currentRecord, "finished_at");
-  const updatedAt = readRecordString(currentRecord, "updated_at");
+  const startedAt = currentRecord["started_at"];
+  const finishedAt = currentRecord["finished_at"];
+  const updatedAt = currentRecord["updated_at"];
 
   const startTime = startedAt ? new Date(startedAt).getTime() : 0;
   const endTime = finishedAt
@@ -369,6 +391,13 @@ export default function ExperimentMonitor() {
   const tokensPerRequest = attemptedRequests > 0 ? tokensUsed / attemptedRequests : 0;
   const requestsPerMinute = elapsedMinutes > 0 ? attemptedRequests / elapsedMinutes : 0;
   const tokensPerMinute = elapsedMinutes > 0 ? tokensUsed / elapsedMinutes : 0;
+
+  const totalLatencyMs = currentRecord["total_latency_ms"];
+  const latencyCount = currentRecord["latency_count"];
+  const p50LatencyMs = currentRecord["p50_latency_ms"];
+  const p95LatencyMs = currentRecord["p95_latency_ms"];
+  const p99LatencyMs = currentRecord["p99_latency_ms"];
+  const avarageLatencyMs = latencyCount > 0 ? totalLatencyMs / latencyCount : 0;
 
   const progressOption: EChartsOption = {
     backgroundColor: "transparent",
@@ -660,6 +689,42 @@ export default function ExperimentMonitor() {
               </div>
             ) : null}
           </div>
+
+          <div className="rounded-3xl border border-border bg-card/90 p-4 shadow-sm backdrop-blur">
+            <div>
+              <p className="text-sm text-muted-foreground">Models</p>
+              <h2 className="text-lg font-semibold">LLMs used in this experiment</h2>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {currentExperimentLlms.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+                  No LLMs found.
+                </div>
+              ) : (
+                currentExperimentLlms.map((llm) => (
+                  <div
+                    key={llm.id}
+                    className="rounded-2xl border border-border bg-muted/30 p-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate font-medium">
+                        {llm.name}
+                      </span>
+                    </div>
+
+                    <div className="mt-1 truncate text-xs text-muted-foreground">
+                      {llm.model}
+                    </div>
+
+                    <div className="mt-1 truncate text-xs text-muted-foreground">
+                      {llm.base_model}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </aside>
 
         <main className="space-y-6">
@@ -714,6 +779,48 @@ export default function ExperimentMonitor() {
               detail={`Success ${formatNumber(successfulRequests)} · Failed ${formatNumber(failedRequests)}`}
               icon={<RefreshCw className="h-4 w-4" />}
             />
+            <div className="rounded-2xl border border-border bg-card/90 p-4 shadow-sm backdrop-blur">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm text-muted-foreground">Request latency</p>
+
+                  <p className="mt-2 text-2xl font-semibold tracking-tight">
+                    {formatNumber(avarageLatencyMs, 0)} ms
+                  </p>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Average latency
+                  </p>
+
+                  <div className="mt-3 grid grid-cols-3 gap-3 border-t border-border pt-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">P50</p>
+                      <p className="mt-1 text-sm font-semibold">
+                        {formatNumber(p50LatencyMs, 0)} ms
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-muted-foreground">P95</p>
+                      <p className="mt-1 text-sm font-semibold">
+                        {formatNumber(p95LatencyMs, 0)} ms
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-muted-foreground">P99</p>
+                      <p className="mt-1 text-sm font-semibold">
+                        {formatNumber(p99LatencyMs, 0)} ms
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-muted/60 p-2 text-muted-foreground">
+                  <Clock3 className="h-4 w-4" />
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">

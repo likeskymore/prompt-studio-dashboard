@@ -11,3 +11,5 @@ export interface PaginatedResponse<T> {
   size: number;
   total: number;
 }
+
+export type DataSource = "api" | "db";

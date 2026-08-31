@@ -2,7 +2,7 @@
 
 import { Experiment } from "@/features/experiment/models/ExperimentModels";
 import { useEffect, useState } from "react";
-import { experimentService } from "@/services/experiment";
+import { experimentApiService } from "@/services/experimentApi";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -16,7 +16,7 @@ const ExperimentConfigPage = () => {
   useEffect(() => {
     const fetchExperiments = async () => {
       try {
-        const response = await experimentService.getAllExperiments();
+        const response = await experimentApiService.getAllExperiments();
 
         console.log("Fetched experiments:", response.body.experiments);
 
@@ -36,7 +36,7 @@ const ExperimentConfigPage = () => {
     }
 
     try {
-      const response = await experimentService.runExperiment(experimentName);
+      const response = await experimentApiService.runExperiment(experimentName);
 
       if (response.responseCode === "SUCCESS") {
         setRunStatus(`Experiment "${experimentName}" started successfully`);

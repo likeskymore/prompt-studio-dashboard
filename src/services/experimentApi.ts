@@ -1,12 +1,13 @@
 import {
   ExperimentListResponse,
   ExperimentStateListResponse,
+  LlmListResponse,
 } from "@/features/experiment/models/ExperimentModels";
 import { baseApiService } from "@/services/api";
 import type { BaseResponse } from "@/types/api";
 
-class ExperimentService {
-  private readonly BASE_PATH = '/experiments';
+class ExperimentApiService {
+  private readonly BASE_PATH = "/experiments";
 
   async getAllExperiments(): Promise<BaseResponse<ExperimentListResponse>> {
     return baseApiService.get<ExperimentListResponse>({
@@ -14,7 +15,9 @@ class ExperimentService {
     });
   }
 
-  async getAllExperimentStates(): Promise<BaseResponse<ExperimentStateListResponse>> {
+  async getAllExperimentStates(): Promise<
+    BaseResponse<ExperimentStateListResponse>
+  > {
     return baseApiService.get<ExperimentStateListResponse>({
       endpoint: `${this.BASE_PATH}/states`,
     });
@@ -25,7 +28,6 @@ class ExperimentService {
       endpoint: `${this.BASE_PATH}/run/${experimentName}`,
     });
   }
-
 
   async subscribeToExperimentRun(
     runId: string,
@@ -43,6 +45,14 @@ class ExperimentService {
       onData: handlers.onData,
     });
   }
+
+  async getExperimentModels(
+    experimentName: string,
+  ): Promise<BaseResponse<LlmListResponse>> {
+    return baseApiService.get<LlmListResponse>({
+      endpoint: `${this.BASE_PATH}/${experimentName}/models`,
+    });
+  }
 }
 
-export const experimentService = new ExperimentService();
+export const experimentApiService = new ExperimentApiService();

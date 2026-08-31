@@ -13,11 +13,11 @@ export const siteConfig = {
 };
 
 export const navigations: Navigation[] = [
-  {
-    icon: MessagesSquare,
-    name: "Experiment Configurator",
-    href: "/experiment-config",
-  },
+  // {
+  //   icon: MessagesSquare,
+  //   name: "Experiment Configurator",
+  //   href: "/experiment-config",
+  // },
   {
     icon: Monitor,
     name: "Experiment Monitoring",

@@ -7,31 +7,22 @@ import ReactECharts from "echarts-for-react";
 import { Activity, ArrowRightLeft, Clock3, Coins, RefreshCw, ShieldAlert, Zap } from "lucide-react";
 import Container from "@/components/container";
 import { Button } from "@/components/ui/button";
-import { ExperimentRunState, Llm } from "@/features/experiment/models/ExperimentModels";
+import { ExperimentRunMetadata, ExperimentRunSample, ExperimentRunState, Llm } from "@/features/experiment/models/ExperimentModels";
 import { MetricCard } from "./components/MetricCard";
 import { PerformanceLineChart } from "./components/PerformanceLineChart";
-import { formatDate, formatDuration, formatNumber, pickStrings } from "@/lib/utils";
+import { formatDate, formatDuration, formatElapsedTime, formatNumber, pickStrings } from "@/lib/utils";
+import { calculateCurrentRequestThroughput, calculatePeakRequestThroughput, getRequestsPerMinuteHistory, getTokensPerMinuteHistory, getTokensPerRequestHistory } from "@/lib/performanceUtils";
 
 
 function normalizeStatus(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-
-function inferExperimentRunStateStatus(experimentRunState: ExperimentRunState): string {
-  const explicitStatus = normalizeStatus(experimentRunState.status);
+function inferExperimentRunStateStatus(experimentRunMetadata: ExperimentRunMetadata): string {
+  const explicitStatus = normalizeStatus(experimentRunMetadata.status);
   if (explicitStatus) {
     return explicitStatus;
   }
-
-  if (experimentRunState.finished_at) {
-    return "completed";
-  }
-
-  if (experimentRunState.started_at) {
-    return "running";
-  }
-
   return "queued";
 }
 
@@ -98,7 +89,7 @@ function getStatusTone(status: string): { label: string; description: string; ba
   };
 }
 
-function getExperimentRunStateDisplayName(experimentRunState: ExperimentRunState | null): string {
+function getExperimentRunStateDisplayName(experimentRunState: ExperimentRunMetadata | null): string {
   if (!experimentRunState) {
     return "Select an experiment";
   }
@@ -112,13 +103,13 @@ function getExperimentRunStateDisplayName(experimentRunState: ExperimentRunState
   return "Untitled experiment";
 }
 
-function getExperimentRunStateKey(experimentRunState: ExperimentRunState): string {
-  return experimentRunState.run_id;
+function getExperimentRunStateKey(ExperimentRunMetadata: ExperimentRunMetadata): string {
+  return ExperimentRunMetadata.run_id;
 }
 
 
 export default function ExperimentMonitor() {
-  const [experimentRunStates, setExperimentRunStates] = useState<ExperimentRunState[]>([]);
+  const [experimentRunStates, setExperimentRunStates] = useState<ExperimentRunMetadata[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<ExperimentRunState | null>(null);
   const [snapshotRunId, setSnapshotRunId] = useState<string | null>(null);
@@ -132,11 +123,8 @@ export default function ExperimentMonitor() {
   const [lastUpdatedAtRunId, setLastUpdatedAtRunId] = useState<string | null>(null);
   const [currentExperimentLlms, setCurrentExperimentLlms] = useState<Llm[]>([]);
   const [now, setNow] = useState(() => Date.now());
+  const [selectedExperimentRunState, setSelectedExperimentRunState] = useState<ExperimentRunState | null>(null);
 
-  const selectedExperimentRunState = useMemo(
-    () => experimentRunStates.find((experimentRunState) => getExperimentRunStateKey(experimentRunState) === selectedRunId) ?? null,
-    [experimentRunStates, selectedRunId],
-  );
   const selectedStatus = selectedExperimentRunState ? inferExperimentRunStateStatus(selectedExperimentRunState) : "idle";
   const statusTone = getStatusTone(selectedStatus);
   const isLiveSelection = selectedRunId !== null && selectedStatus === "running";
@@ -169,7 +157,7 @@ export default function ExperimentMonitor() {
 
       const data = await response.json();
 
-      const nextExperimentRunStates: ExperimentRunState[] =
+      const nextExperimentRunStates: ExperimentRunMetadata[] =
         data.experiment_states ?? [];
 
       setExperimentRunStates(nextExperimentRunStates);
@@ -204,6 +192,45 @@ export default function ExperimentMonitor() {
       console.error("Failed to fetch experiment states:", error);
     }
   };
+
+  useEffect(() => {
+    if (selectedRunId === null) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadExperimentRunState = async () => {
+      try {
+        const response = await fetch(
+          `/api/experiment-run/${selectedRunId}/state`,
+          {
+            signal: controller.signal,
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch experiment run state");
+        }
+
+        const data = await response.json();
+
+        setSelectedExperimentRunState(data.experiment_state ?? null);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        console.error("Failed to fetch experiment run state:", error);
+      }
+    };
+
+    void loadExperimentRunState();
+
+    return () => {
+      controller.abort();
+    };
+  }, [selectedRunId]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -375,6 +402,7 @@ export default function ExperimentMonitor() {
   const startedAt = currentRecord["started_at"];
   const finishedAt = currentRecord["finished_at"];
   const updatedAt = currentRecord["updated_at"];
+  const experimentSamples = currentRecord["samples"] as ExperimentRunSample[] | undefined;
 
   const startTime = startedAt ? new Date(startedAt).getTime() : 0;
   const endTime = finishedAt
@@ -388,16 +416,35 @@ export default function ExperimentMonitor() {
     : 0;
   const elapsedMinutes = elapsedSeconds / 60;
 
+  const remainingRequests = totalRequests - attemptedRequests;
+
   const tokensPerRequest = attemptedRequests > 0 ? tokensUsed / attemptedRequests : 0;
   const requestsPerMinute = elapsedMinutes > 0 ? attemptedRequests / elapsedMinutes : 0;
   const tokensPerMinute = elapsedMinutes > 0 ? tokensUsed / elapsedMinutes : 0;
+
+  const tokensPerRequestHistory =
+    getTokensPerRequestHistory(experimentSamples ?? []);
+
+  const requestsPerMinuteHistory =
+    getRequestsPerMinuteHistory(experimentSamples ?? []);
+
+  const tokensPerMinuteHistory =
+    getTokensPerMinuteHistory(experimentSamples ?? []);
+
+  const remainingTime =
+    requestsPerMinute > 0
+      ? remainingRequests / (requestsPerMinute / 60)
+      : undefined
+
+  const currentRequestThroughput = calculateCurrentRequestThroughput(experimentSamples ?? []);
+  const peakRequestThroughput = calculatePeakRequestThroughput(experimentSamples ?? []);
 
   const totalLatencyMs = currentRecord["total_latency_ms"];
   const latencyCount = currentRecord["latency_count"];
   const p50LatencyMs = currentRecord["p50_latency_ms"];
   const p95LatencyMs = currentRecord["p95_latency_ms"];
   const p99LatencyMs = currentRecord["p99_latency_ms"];
-  const avarageLatencyMs = latencyCount > 0 ? totalLatencyMs / latencyCount : 0;
+  const averageLatencyMs = latencyCount > 0 ? totalLatencyMs / latencyCount : 0;
 
   const progressOption: EChartsOption = {
     backgroundColor: "transparent",
@@ -493,9 +540,9 @@ export default function ExperimentMonitor() {
 
 
   const groupedExperimentRunStates = useMemo(() => {
-    const runningExperimentRunStates: ExperimentRunState[] = [];
-    const completedExperimentRunStates: ExperimentRunState[] = [];
-    const other: ExperimentRunState[] = [];
+    const runningExperimentRunStates: ExperimentRunMetadata[] = [];
+    const completedExperimentRunStates: ExperimentRunMetadata[] = [];
+    const other: ExperimentRunMetadata[] = [];
 
     for (const experimentRunState of experimentRunStates) {
       const status = inferExperimentRunStateStatus(experimentRunState);
@@ -747,8 +794,13 @@ export default function ExperimentMonitor() {
                     Run #{selectedExperimentRunState?.run_id ?? "--"}
                   </span>
                   <span className="rounded-full border border-border bg-card/90 px-3 py-1 text-muted-foreground">
-                    {finishedAt ? formatDuration(startedAt, finishedAt) : formatDuration(startedAt, updatedAt)} {isLiveSelection ? "elapsed" : "total"}
+                    {finishedAt ? formatElapsedTime(startedAt, finishedAt) : formatElapsedTime(startedAt, updatedAt)} {isLiveSelection ? "elapsed" : "total"}
                   </span>
+                  {isLiveSelection && (
+                    <span className="rounded-full border border-border bg-card/90 px-3 py-1 text-muted-foreground">
+                      ~ {formatDuration(remainingTime)} remaining
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -785,7 +837,7 @@ export default function ExperimentMonitor() {
                   <p className="text-sm text-muted-foreground">Request latency</p>
 
                   <p className="mt-2 text-2xl font-semibold tracking-tight">
-                    {formatNumber(avarageLatencyMs, 0)} ms
+                    {formatNumber(averageLatencyMs, 0)} ms
                   </p>
 
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -872,9 +924,19 @@ export default function ExperimentMonitor() {
 
                 <MetricCard
                   title="Requests / Minute"
-                  value={requestsPerMinute.toFixed(1)}
-                  detail="Average request throughput"
+                  value={currentRequestThroughput.toFixed(1)}
+                  detail="Current request throughput"
                   icon={<Activity className="h-4 w-4" />}
+                  secondaryValues={[
+                    {
+                      label: "Average",
+                      value: `${requestsPerMinute.toFixed(1)} req/min`,
+                    },
+                    {
+                      label: "Peak",
+                      value: `${peakRequestThroughput.toFixed(1)} req/min`,
+                    },
+                  ]}
                 />
 
                 <MetricCard
@@ -941,19 +1003,19 @@ export default function ExperimentMonitor() {
           <div className="grid gap-6 xl:grid-cols-3">
             <PerformanceLineChart
               title="Tokens / Request"
-              value={tokensPerRequest}
+              data={tokensPerRequestHistory}
               unit="tokens"
             />
 
             <PerformanceLineChart
               title="Requests / Minute"
-              value={requestsPerMinute}
+              data={requestsPerMinuteHistory}
               unit="requests/min"
             />
 
             <PerformanceLineChart
               title="Tokens / Minute"
-              value={tokensPerMinute}
+              data={tokensPerMinuteHistory}
               unit="tokens/min"
             />
           </div>

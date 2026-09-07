@@ -1,4 +1,9 @@
-export type ExperimentRunStatus = "queued" | "running" | "completed" | "failed" | "paused";
+export type ExperimentRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "paused";
 
 export type ExperimentRunSample = {
   at: string;
@@ -15,8 +20,7 @@ export type Llm = {
   base_model: string;
   name: string;
   model: string;
-}
-
+};
 
 export type ExperimentRunState = {
   run_id: string;
@@ -39,7 +43,18 @@ export type ExperimentRunState = {
   p95_latency_ms: number;
   p99_latency_ms: number;
   latency_samples: number[];
+  samples_json: ExperimentRunSample[];
 };
+
+export interface ExperimentRunMetadata {
+  run_id: string;
+  experiment_name: string;
+  status: string;
+  started_at?: string;
+  finished_at?: string;
+  updated_at: string;
+}
+
 
 export type Experiment = {
   id: number;
@@ -52,8 +67,8 @@ export type ExperimentListResponse = {
   experiments: Experiment[];
 };
 
-export type ExperimentStateListResponse = {
-  experiment_states: ExperimentRunState[];
+export type ExperimentStateMetadataListResponse = {
+  experiment_states_metadata: ExperimentRunMetadata[];
 };
 
 export type LlmListResponse = {

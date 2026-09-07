@@ -1,10 +1,12 @@
-import { ReactNode } from "react";
+  export type ChartSeriesPoint = [string, number];
 
-export type ChartSeriesPoint = [string, number];
-
-export type MetricCardProps = {
+export interface MetricCardProps {
   title: string;
   value: string;
   detail?: string;
-  icon: ReactNode;
-};
+  icon?: React.ReactNode;
+  secondaryValues?: {
+    label: string;
+    value: string;
+  }[];
+}

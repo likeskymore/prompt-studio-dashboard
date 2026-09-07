@@ -1,16 +1,22 @@
+import { formatNumber } from "@/lib/utils";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import { Activity } from "lucide-react";
 
+interface DataPoint {
+    time: string;
+    value: number;
+}
+
 interface PerformanceLineChartProps {
     title: string;
-    value: number;
+    data: DataPoint[];
     unit: string;
 }
 
 export function PerformanceLineChart({
     title,
-    value,
+    data,
     unit,
 }: PerformanceLineChartProps) {
     const option: EChartsOption = {
@@ -18,6 +24,7 @@ export function PerformanceLineChart({
 
         tooltip: {
             trigger: "axis",
+            valueFormatter: (value) => formatNumber(Number(value)),
         },
 
         grid: {
@@ -30,43 +37,40 @@ export function PerformanceLineChart({
 
         xAxis: {
             type: "category",
-            data: ["Current"],
-            axisLabel: {
-                color: "#64748b",
-                fontSize: 10,
-            },
+            data: data.map((point) =>
+                new Date(point.time).toLocaleTimeString()
+            ),
         },
 
         yAxis: {
             type: "value",
-            axisLabel: {
-                color: "#64748b",
-                fontSize: 10,
-            },
         },
 
         series: [
             {
                 name: title,
                 type: "line",
-                data: [value],
+                data: data.map((point) => point.value),
                 smooth: true,
                 symbol: "circle",
-                symbolSize: 8,
-                lineStyle: {
-                    width: 2,
-                },
+                symbolSize: 6,
             },
         ],
     };
+
+    const currentValue = data.at(-1)?.value;
 
     return (
         <div className="rounded-3xl border border-border bg-card/90 p-6 shadow-sm backdrop-blur">
             <div className="mb-5 flex items-start justify-between gap-4">
                 <div>
                     <h2 className="text-lg font-semibold">{title}</h2>
+
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Current {unit}
+                        Current {unit}:{" "}
+                        {currentValue !== undefined
+                            ? currentValue.toFixed(2)
+                            : "—"}
                     </p>
                 </div>
 

@@ -16,17 +16,23 @@ const ExperimentConfigPage = () => {
   useEffect(() => {
     const fetchExperiments = async () => {
       try {
-        const response = await experimentApiService.getAllExperiments();
+        const response = await fetch("/api/experiments");
 
-        console.log("Fetched experiments:", response.body.experiments);
+        if (!response.ok) {
+          throw new Error("Failed to fetch experiments");
+        }
 
-        setExperiments(response.body.experiments);
+        const data = await response.json();
+
+        console.log("Fetched experiments:", data.experiments);
+
+        setExperiments(data.experiments ?? []);
       } catch (error) {
         console.error("Failed to fetch experiments:", error);
       }
     };
 
-    fetchExperiments();
+    void fetchExperiments();
   }, []);
 
   const handleRunExperiment = async (experimentName: string) => {

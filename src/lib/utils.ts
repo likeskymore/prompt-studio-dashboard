@@ -38,7 +38,10 @@ export function pickStrings(values: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
-export function formatNumber(value: number | undefined, fractionDigits = 0): string {
+export function formatNumber(
+  value: number | undefined,
+  fractionDigits = 0,
+): string {
   if (value === undefined || Number.isNaN(value)) {
     return "--";
   }
@@ -65,7 +68,7 @@ export function formatDate(value: string | undefined): string {
   }).format(date);
 }
 
-export function formatDuration(
+export function formatElapsedTime(
   start: string | undefined,
   end?: string | undefined,
 ): string {
@@ -94,4 +97,26 @@ export function formatDuration(
   }
 
   return `${seconds}s`;
+}
+
+export function formatDuration(seconds: number | undefined): string {
+  if (seconds === undefined || !Number.isFinite(seconds)) {
+    return "--";
+  }
+
+  const totalSeconds = Math.max(0, Math.round(seconds));
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  }
+
+  return `${secs}s`;
 }

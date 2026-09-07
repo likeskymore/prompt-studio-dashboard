@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { experimentDataSource } from "@/data-sources/experimentDataSource";
+import { monitoringDataSource } from "@/data-sources/monitoringDataSource";
 
 export async function GET() {
   try {
-    const experiment_states = await experimentDataSource.getAllExperimentStates();
+    const experiment_states = await monitoringDataSource.getAllExperimentStatesMetadata();
 
     return NextResponse.json({
       experiment_states

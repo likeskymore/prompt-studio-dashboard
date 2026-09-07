@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
-import { experimentDataSource } from "@/data-sources/experimentDataSource";
+import { monitoringDataSource } from "@/data-sources/monitoringDataSource";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ runId: string }> },
 ) {
-  const { id } = await params;
+  const { runId } = await params;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -24,8 +24,8 @@ export async function GET(
         );
       };
 
-      void experimentDataSource
-        .subscribeToExperimentRun(id, {
+      void monitoringDataSource
+        .subscribeToExperimentRun(runId, {
           signal: request.signal,
 
           onEvent: (event) => {

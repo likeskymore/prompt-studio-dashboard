@@ -1,13 +1,13 @@
 import { TopNav } from "@/components/nav";
 
-export default function ExperimentConfigLayout({
+export default function ExperimentRunnerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
     <>
-      <TopNav title="Experiment Configurator" />
+      <TopNav title="Experiment Runner" />
       <main>{children}</main>
     </>
   );

@@ -4,13 +4,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
-import { Activity, ArrowRightLeft, Clock3, Coins, RefreshCw, ShieldAlert, Zap } from "lucide-react";
+import { Activity, ArrowRightLeft, Clock3, Coins, Loader2, Pause, Play, RefreshCw, ShieldAlert, Zap } from "lucide-react";
 import Container from "@/components/container";
 import { Button } from "@/components/ui/button";
 import { ExperimentRunMetadata, ExperimentRunSample, ExperimentRunState, Llm } from "@/features/experiment/models/ExperimentModels";
 import { MetricCard } from "./components/MetricCard";
 import { PerformanceLineChart } from "./components/PerformanceLineChart";
-import { formatDate, formatDuration, formatElapsedTime, formatNumber, pickStrings } from "@/lib/utils";
+import { calculateActiveElapsedSeconds, formatDate, formatDuration, formatNumber, pickStrings } from "@/lib/utils";
 import { calculateCurrentRequestThroughput, calculatePeakRequestThroughput, getRequestsPerMinuteHistory, getTokensPerMinuteHistory, getTokensPerRequestHistory } from "@/lib/performanceUtils";
 
 
@@ -107,7 +107,6 @@ function getExperimentRunStateKey(ExperimentRunMetadata: ExperimentRunMetadata):
   return ExperimentRunMetadata.run_id;
 }
 
-
 export default function ExperimentMonitor() {
   const [experimentRunStates, setExperimentRunStates] = useState<ExperimentRunMetadata[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -124,6 +123,9 @@ export default function ExperimentMonitor() {
   const [currentExperimentLlms, setCurrentExperimentLlms] = useState<Llm[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [selectedExperimentRunState, setSelectedExperimentRunState] = useState<ExperimentRunState | null>(null);
+  const [runAction, setRunAction] = useState<"pause" | "resume" | null>(null);
+  const [isRefreshingExperimentStatesList, setIsRefreshingExperimentStatesList] = useState(false);
+  const [runActionError, setRunActionError] = useState<string | null>(null);
 
   const selectedStatus = selectedExperimentRunState ? inferExperimentRunStateStatus(selectedExperimentRunState) : "idle";
   const statusTone = getStatusTone(selectedStatus);
@@ -242,16 +244,16 @@ export default function ExperimentMonitor() {
 
   useEffect(() => {
     const fetchExperimentModels = async () => {
-      const experimentName = selectedExperimentRunState?.experiment_name;
+      const experimentId = selectedExperimentRunState?.experiment_id;
 
-      if (!experimentName) {
+      if (!experimentId) {
         setCurrentExperimentLlms([]);
         return;
       }
 
       try {
         const response = await fetch(
-          `/api/experiment/${encodeURIComponent(experimentName)}/models`,
+          `/api/experiment/${encodeURIComponent(experimentId.toString())}/models`,
         );
 
         if (!response.ok) {
@@ -384,6 +386,68 @@ export default function ExperimentMonitor() {
     };
   }, [isLiveSelection, selectedRunId]);
 
+  const handleRunAction = async (action: "pause" | "resume") => {
+    if (selectedRunId === null || runAction !== null) {
+      return;
+    }
+
+    setRunAction(action);
+    setRunActionError(null);
+
+    try {
+      const response = await fetch(`/api/experiment-run/${selectedRunId}/${action}`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to ${action} experiment run`);
+      }
+
+      const nextStatus = action === "pause" ? "paused" : "running";
+      const updatedAt = new Date().toISOString();
+
+      setSelectedExperimentRunState((currentState) => {
+        const nextState = activeSnapshot ?? currentState;
+
+        return nextState
+          ? {
+            ...nextState,
+            status: nextStatus,
+            updated_at: updatedAt,
+          }
+          : currentState;
+      });
+
+      setExperimentRunStates((currentStates) =>
+        currentStates.map((experimentRunState) =>
+          experimentRunState.run_id === selectedRunId
+            ? {
+              ...experimentRunState,
+              status: nextStatus,
+              updated_at: updatedAt,
+            }
+            : experimentRunState,
+        ),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Failed to ${action} experiment run`;
+      setRunActionError(message);
+      console.error(`Failed to ${action} experiment run:`, error);
+    } finally {
+      setRunAction(null);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshingExperimentStatesList(true);
+
+    try {
+      await syncExperimentRunStates();
+    } finally {
+      setIsRefreshingExperimentStatesList(false);
+    }
+  };
+
   const experimentRunStateName = getExperimentRunStateDisplayName(activeSnapshot ?? selectedExperimentRunState);
   const status = statusTone.label;
   const tokensUsed = currentRecord["total_tokens"];
@@ -400,23 +464,31 @@ export default function ExperimentMonitor() {
       ? 0
       : Math.max(0, Math.min(100, (attemptedRequests / totalRequests) * 100));
   const startedAt = currentRecord["started_at"];
+  const pausedAt = currentRecord["paused_at"];
   const finishedAt = currentRecord["finished_at"];
   const updatedAt = currentRecord["updated_at"];
+  const totalPausedMs = currentRecord["total_paused_ms"] ?? 0;
   const experimentSamples = currentRecord["samples"] as ExperimentRunSample[] | undefined;
 
-  const startTime = startedAt ? new Date(startedAt).getTime() : 0;
-  const endTime = finishedAt
-    ? new Date(finishedAt).getTime()
-    : updatedAt
-      ? new Date(updatedAt).getTime()
-      : now;
+  const elapsedEnd =
+    finishedAt ??
+    (isLiveSelection
+      ? new Date(now).toISOString()
+      : currentRecord["status"] === "paused"
+        ? pausedAt
+        : updatedAt);
 
-  const elapsedSeconds = startTime && endTime > startTime
-    ? (endTime - startTime) / 1000
-    : 0;
+  const elapsedSeconds = calculateActiveElapsedSeconds(
+    startedAt,
+    elapsedEnd,
+    totalPausedMs,
+    currentRecord["status"] === "paused"
+      ? pausedAt
+      : undefined,
+  );
   const elapsedMinutes = elapsedSeconds / 60;
 
-  const remainingRequests = totalRequests - attemptedRequests;
+  const remainingRequests = Math.max(0, (totalRequests ?? 0) - (attemptedRequests ?? 0));
 
   const tokensPerRequest = attemptedRequests > 0 ? tokensUsed / attemptedRequests : 0;
   const requestsPerMinute = elapsedMinutes > 0 ? attemptedRequests / elapsedMinutes : 0;
@@ -577,12 +649,15 @@ export default function ExperimentMonitor() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={() => {
-                  void syncExperimentRunStates();
-                }}
+                onClick={() => void handleRefresh()}
+                disabled={isRefreshingExperimentStatesList}
                 aria-label="Refresh experiments"
               >
-                <RefreshCw className="h-4 w-4" />
+                {isRefreshingExperimentStatesList ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
               </Button>
             </div>
 
@@ -735,6 +810,11 @@ export default function ExperimentMonitor() {
                 {displayStreamError}
               </div>
             ) : null}
+            {runActionError ? (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+                {runActionError}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-3xl border border-border bg-card/90 p-4 shadow-sm backdrop-blur">
@@ -779,23 +859,33 @@ export default function ExperimentMonitor() {
             <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
               <div className="max-w-3xl space-y-4">
                 <div className="space-y-3">
-                  <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{experimentRunStateName}</h1>
+                  <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
+                    {experimentRunStateName}
+                  </h1>
+
                   <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                     {isLiveSelection
                       ? "Monitor live progress, token consumption, request health, and the latest messages from the active SSE stream."
                       : statusTone.description}
                   </p>
                 </div>
+
                 <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className={`rounded-full px-3 py-1 font-medium ${statusTone.badgeClass}`}>
+                  <span
+                    className={`rounded-full px-3 py-1 font-medium ${statusTone.badgeClass}`}
+                  >
                     {status}
                   </span>
+
                   <span className="rounded-full border border-border bg-card/90 px-3 py-1 text-muted-foreground">
                     Run #{selectedExperimentRunState?.run_id ?? "--"}
                   </span>
+
                   <span className="rounded-full border border-border bg-card/90 px-3 py-1 text-muted-foreground">
-                    {finishedAt ? formatElapsedTime(startedAt, finishedAt) : formatElapsedTime(startedAt, updatedAt)} {isLiveSelection ? "elapsed" : "total"}
+                    {formatDuration(elapsedSeconds)}{" "}
+                    {isLiveSelection ? "elapsed" : "total"}
                   </span>
+
                   {isLiveSelection && (
                     <span className="rounded-full border border-border bg-card/90 px-3 py-1 text-muted-foreground">
                       ~ {formatDuration(remainingTime)} remaining
@@ -804,16 +894,64 @@ export default function ExperimentMonitor() {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:min-w-90 lg:max-w-105">
-                <div className="rounded-2xl border border-border bg-card/95 p-4 shadow-sm">
-                  <p className="text-sm text-muted-foreground">Execution window</p>
-                  <p className="mt-2 text-sm font-medium">{formatDate(startedAt)}</p>
-                  <p className="text-sm text-muted-foreground">→ {formatDate(finishedAt)}</p>
-                </div>
-                <div className="rounded-2xl border border-border bg-card/95 p-4 shadow-sm">
-                  <p className="text-sm text-muted-foreground">Requests processed</p>
-                  <p className="mt-2 text-2xl font-semibold">{formatNumber(attemptedRequests)}</p>
-                  <p className="text-sm text-muted-foreground">of {formatNumber(totalRequests)} items</p>
+              <div className="flex flex-col gap-3 lg:min-w-90 lg:max-w-105">
+                {(status === "Running" || status === "Paused") && (
+                  <div>
+                    {isLiveSelection && (
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          void handleRunAction("pause");
+                        }}
+                        disabled={runAction !== null}
+                      >
+                        {runAction === "pause" ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Pause className="mr-2 h-4 w-4" />
+                        )}
+                        {runAction === "pause" ? "Pausing..." : "Pause"}
+                      </Button>
+                    )}
+
+                    {status === "Paused" && (
+                      <Button
+                        className="w-full"
+                        onClick={() => {
+                          void handleRunAction("resume");
+                        }}
+                        disabled={runAction !== null}
+                      >
+                        {runAction === "resume" ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Play className="mr-2 h-4 w-4" />
+                        )}
+                        {runAction === "resume" ? "Resuming..." : "Resume"}
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {/* Metrics */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-border bg-card/95 p-4 shadow-sm">
+                    <p className="text-sm text-muted-foreground">Execution window</p>
+                    <p className="mt-2 text-sm font-medium">{formatDate(startedAt)}</p>
+                    <p className="text-sm text-muted-foreground">
+                      → {formatDate(finishedAt)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-border bg-card/95 p-4 shadow-sm">
+                    <p className="text-sm text-muted-foreground">Requests processed</p>
+                    <p className="mt-2 text-2xl font-semibold">
+                      {formatNumber(attemptedRequests)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      of {formatNumber(totalRequests)} items
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

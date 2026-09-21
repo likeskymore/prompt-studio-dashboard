@@ -1,4 +1,4 @@
-import { ChartColumn, type LucideIcon, MessagesSquare, Monitor } from "lucide-react";
+import { ChartColumn, type LucideIcon, Monitor, Play } from "lucide-react";
 
 export type SiteConfig = typeof siteConfig;
 export type Navigation = {
@@ -13,11 +13,11 @@ export const siteConfig = {
 };
 
 export const navigations: Navigation[] = [
-  // {
-  //   icon: MessagesSquare,
-  //   name: "Experiment Configurator",
-  //   href: "/experiment-config",
-  // },
+  {
+    icon: Play,
+    name: "Experiment Runner",
+    href: "/experiment-runner",
+  },
   {
     icon: Monitor,
     name: "Experiment Monitoring",

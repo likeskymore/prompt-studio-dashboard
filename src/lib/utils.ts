@@ -99,6 +99,34 @@ export function formatElapsedTime(
   return `${seconds}s`;
 }
 
+export function calculateActiveElapsedSeconds(
+  start?: string,
+  end?: string,
+  totalPausedMs = 0,
+  pausedAt?: string,
+): number {
+  if (!start) return 0;
+
+  const startTime = new Date(start).getTime();
+  const endTime = end ? new Date(end).getTime() : Date.now();
+
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) {
+    return 0;
+  }
+
+  let pausedMs = totalPausedMs;
+
+  if (pausedAt) {
+    const currentPauseStart = new Date(pausedAt).getTime();
+
+    if (Number.isFinite(currentPauseStart)) {
+      pausedMs += Math.max(0, endTime - currentPauseStart);
+    }
+  }
+
+  return Math.max(0, (endTime - startTime - pausedMs) / 1000);
+}
+
 export function formatDuration(seconds: number | undefined): string {
   if (seconds === undefined || !Number.isFinite(seconds)) {
     return "--";

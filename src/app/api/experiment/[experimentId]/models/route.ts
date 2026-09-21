@@ -3,13 +3,13 @@ import { experimentDataSource } from "@/data-sources/experimentDataSource";
 
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ experimentName: string }> },
+  { params }: { params: Promise<{ experimentId: number }> },
 ) {
   try {
-    const { experimentName } = await params;
+    const { experimentId } = await params;
 
     const models =
-      await experimentDataSource.getExperimentModels(experimentName);
+      await experimentDataSource.getExperimentModels(experimentId);
 
     return NextResponse.json({
       models,

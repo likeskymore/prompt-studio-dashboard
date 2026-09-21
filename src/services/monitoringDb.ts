@@ -27,6 +27,7 @@ class MonitoringDbService {
 
     return rows[0] ?? null;
   }
+  
 }
 
 export const monitoringDbService = new MonitoringDbService();

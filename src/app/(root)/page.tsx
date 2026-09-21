@@ -1,13 +1,13 @@
 import { Button } from "@/components/ui/button";
 import NavCard from "@/components/ui/nav-card";
 import ControlPanel from "@/components/ui/control-panel";
-import { Monitor, ChartColumn } from "lucide-react";
+import { Monitor, ChartColumn, Play } from "lucide-react";
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
-        
+
         {/* Header */}
         <header className="mb-12">
           <p className="mb-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
@@ -24,7 +24,12 @@ export default function Home() {
         </header>
 
         {/* Main navigation */}
-        <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <NavCard
+            title="Experiment Runner"
+            icon={Play}
+            href="/experiment-runner"
+          />
           <NavCard
             title="Experiment Monitoring"
             icon={Monitor}

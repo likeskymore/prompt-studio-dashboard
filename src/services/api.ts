@@ -22,7 +22,7 @@ export interface GetRequestArgs {
 
 export interface PostRequestArgs {
   endpoint: string;
-  data: unknown;
+  data?: unknown;
   signal?: AbortSignal;
 }
 

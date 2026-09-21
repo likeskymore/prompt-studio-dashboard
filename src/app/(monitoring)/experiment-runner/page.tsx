@@ -6,11 +6,11 @@ import { experimentApiService } from "@/services/experimentApi";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Trash2 } from "lucide-react";
 
-const ExperimentConfigPage = () => {
+const ExperimentRunnerPage = () => {
   const [experiments, setExperiments] = useState<Experiment[]>([]);
-  const [selectedExperiment, setSelectedExperiment] = useState<string>("");
+  const [selectedExperiment, setSelectedExperiment] = useState<Experiment | null>(null);
   const [runStatus, setRunStatus] = useState<string>("");
 
   useEffect(() => {
@@ -56,6 +56,32 @@ const ExperimentConfigPage = () => {
     }
   };
 
+  const handleDeleteExperiment = async () => {
+    if (!selectedExperiment) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/experiment/${selectedExperiment.id}`,
+        { method: "DELETE" },
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to delete experiment");
+      }
+
+      setExperiments((currentExperiments) =>
+        currentExperiments.filter((experiment) => experiment.id !== selectedExperiment.id),
+      );
+      setRunStatus(`Experiment "${selectedExperiment.title}" deleted successfully`);
+      setSelectedExperiment(null);
+    } catch (error) {
+      console.error("Failed to delete experiment:", error);
+      setRunStatus("Failed to delete experiment");
+    }
+  };
+
   return (
     <div className="p-8">
       <h1 className="mb-4 text-2xl font-semibold">
@@ -72,10 +98,10 @@ const ExperimentConfigPage = () => {
             {experiments.map((experiment) => (
               <button
                 key={experiment.id}
-                onClick={() => setSelectedExperiment(experiment.title)}
+                onClick={() => setSelectedExperiment(experiment)}
                 className={cn(
                   "w-full rounded-md border border-border p-3 text-left transition-colors",
-                  selectedExperiment === experiment.title
+                  selectedExperiment?.id === experiment.id
                     ? "bg-accent text-accent-foreground"
                     : "hover:bg-accent"
                 )}
@@ -97,9 +123,20 @@ const ExperimentConfigPage = () => {
               hover:bg-accent
               hover:text-accent-foreground
             "
-            onClick={() => handleRunExperiment(selectedExperiment)}
+            onClick={() => handleRunExperiment(selectedExperiment?.title ?? "")}
           >
             Run Experiment
+          </Button>
+
+          <Button
+            variant="outline"
+            className="border-2 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            onClick={handleDeleteExperiment}
+            disabled={!selectedExperiment}
+            aria-label="Delete selected experiment"
+          >
+            <Trash2 size={16} />
+            Delete Experiment
           </Button>
 
           {runStatus && (
@@ -132,4 +169,4 @@ const ExperimentConfigPage = () => {
   );
 };
 
-export default ExperimentConfigPage;
+export default ExperimentRunnerPage;

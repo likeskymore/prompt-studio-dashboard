@@ -2,6 +2,16 @@
 
 The PromptStudio Dashboard is used to inspect experiment runs and monitor their performance.
 
+## Rerun an existing experiment
+
+1. Open `/experiment-runner`.
+2. Select an experiment from the list.
+3. Select **Run Experiment** to start a new run using that experiment.
+4. Check the status message beside the controls to confirm whether the run started successfully.
+5. Select **Monitor Experiment** to open the monitoring view and inspect the new run.
+
+The runner uses the saved experiment definition as-is. To remove an experiment, select it and choose **Delete Experiment**. Deletion cannot be undone from the dashboard.
+
 ## Monitor an experiment
 
 Open `/experiment-monitor` to view available experiments and runs. Select a run to inspect its current state and metrics.
@@ -30,4 +40,4 @@ Use the theme control to switch between light and dark mode.
 | --- | --- |
 | `/experiment-monitor` | Monitor experiment runs and inspect metrics |
 | `/analysis` | Analysis view; currently a placeholder |
-| `/experiment-config` | Experiment configuration route |
+| `/experiment-runner` | Experiment rerunning page |

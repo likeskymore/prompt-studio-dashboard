@@ -35,14 +35,14 @@ const ExperimentRunnerPage = () => {
     void fetchExperiments();
   }, []);
 
-  const handleRunExperiment = async (experimentName: string) => {
+  const handleRerunExperiment = async (experimentName: string) => {
     if (!experimentName) {
       setRunStatus("Please select an experiment first");
       return;
     }
 
     try {
-      const response = await experimentApiService.runExperiment(experimentName);
+      const response = await experimentApiService.rerunExperiment(experimentName);
 
       if (response.responseCode === "SUCCESS") {
         setRunStatus(`Experiment "${experimentName}" started successfully`);
@@ -123,9 +123,9 @@ const ExperimentRunnerPage = () => {
               hover:bg-accent
               hover:text-accent-foreground
             "
-            onClick={() => handleRunExperiment(selectedExperiment?.title ?? "")}
+            onClick={() => handleRerunExperiment(selectedExperiment?.title ?? "")}
           >
-            Run Experiment
+            Rerun Experiment
           </Button>
 
           <Button

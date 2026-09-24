@@ -16,9 +16,9 @@ class ExperimentApiService {
     });
   }
 
-  async runExperiment(experimentName: string): Promise<BaseResponse<string>> {
-    return baseApiService.get<string>({
-      endpoint: `${this.BASE_PATH}/run/${experimentName}`,
+  async rerunExperiment(experimentName: string): Promise<BaseResponse<string>> {
+    return baseApiService.post<string>({
+      endpoint: `${this.BASE_PATH}/run/${experimentName}/rerun`,
     });
   }
 

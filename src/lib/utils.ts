@@ -108,23 +108,27 @@ export function calculateActiveElapsedSeconds(
   if (!start) return 0;
 
   const startTime = new Date(start).getTime();
-  const endTime = end ? new Date(end).getTime() : Date.now();
+  const endTime = end === undefined ? Date.now() : new Date(end).getTime();
 
   if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) {
     return 0;
   }
 
-  let pausedMs = totalPausedMs;
+  const elapsedMs = Math.max(0, endTime - startTime);
+  const accumulatedPausedMs = Number(totalPausedMs);
+  let pausedMs = Number.isFinite(accumulatedPausedMs)
+    ? Math.max(0, accumulatedPausedMs)
+    : 0;
 
   if (pausedAt) {
     const currentPauseStart = new Date(pausedAt).getTime();
 
-    if (Number.isFinite(currentPauseStart)) {
-      pausedMs += Math.max(0, endTime - currentPauseStart);
+    if (Number.isFinite(currentPauseStart) && currentPauseStart < endTime) {
+      pausedMs += Math.max(0, endTime - Math.max(startTime, currentPauseStart));
     }
   }
 
-  return Math.max(0, (endTime - startTime - pausedMs) / 1000);
+  return Math.max(0, (elapsedMs - pausedMs) / 1000);
 }
 
 export function formatDuration(seconds: number | undefined): string {

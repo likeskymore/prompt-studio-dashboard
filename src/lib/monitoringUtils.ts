@@ -1,4 +1,5 @@
 import { ExperimentRunSample } from "@/features/experiment/models/ExperimentModels";
+import { ExperimentRunMetadata } from "@/features/experiment/models/ExperimentModels";
 
 export interface PerformanceDataPoint {
   time: string;
@@ -151,4 +152,111 @@ export function getTokensPerMinuteHistory(
       value: elapsedMinutes > 0 ? deltaTokens / elapsedMinutes : 0,
     };
   });
+}
+
+function normalizeStatus(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+export function inferExperimentRunStateStatus(
+  experimentRunMetadata: ExperimentRunMetadata,
+): string {
+  const explicitStatus = normalizeStatus(experimentRunMetadata.status);
+  if (explicitStatus) {
+    return explicitStatus;
+  }
+  return "queued";
+}
+
+export function getStatusTone(status: string): {
+  label: string;
+  description: string;
+  badgeClass: string;
+  dotClass: string;
+  accent: string;
+} {
+  const normalizedStatus = normalizeStatus(status);
+
+  if (normalizedStatus === "running") {
+    return {
+      label: "Running",
+      description: "Live SSE updates are active.",
+      badgeClass: "bg-primary text-primary-foreground",
+      dotClass: "bg-emerald-500",
+      accent: "#2563eb",
+    };
+  }
+
+  if (normalizedStatus === "completed") {
+    return {
+      label: "Completed",
+      description: "Experiment run completed",
+      badgeClass: "bg-emerald-600 text-white",
+      dotClass: "bg-emerald-500",
+      accent: "#16a34a",
+    };
+  }
+
+  if (normalizedStatus === "failed") {
+    return {
+      label: "Failed",
+      description: "The run ended with an error state.",
+      badgeClass: "bg-destructive text-destructive-foreground",
+      dotClass: "bg-red-500",
+      accent: "#dc2626",
+    };
+  }
+
+  if (normalizedStatus === "paused") {
+    return {
+      label: "Paused",
+      description: "The experiment run is currently paused.",
+      badgeClass: "bg-amber-500 text-white",
+      dotClass: "bg-amber-500",
+      accent: "#d97706",
+    };
+  }
+
+  if (normalizedStatus === "queued") {
+    return {
+      label: "Queued",
+      description: "The run is waiting to start.",
+      badgeClass: "bg-amber-500 text-white",
+      dotClass: "bg-amber-500",
+      accent: "#d97706",
+    };
+  }
+
+  return {
+    label: normalizedStatus ? normalizedStatus : "Unknown",
+    description: "No explicit status was reported.",
+    badgeClass: "bg-muted text-muted-foreground",
+    dotClass: "bg-slate-400",
+    accent: "#64748b",
+  };
+}
+
+export function getExperimentRunStateDisplayName(
+  experimentRunState: ExperimentRunMetadata | null,
+): string {
+  if (!experimentRunState) {
+    return "Select an experiment";
+  }
+
+  const record = experimentRunState as Record<string, unknown>;
+  const experimentRunStateName = record.experiment_name;
+  if (
+    typeof experimentRunStateName === "string" &&
+    experimentRunStateName.length > 0
+  ) {
+    return experimentRunStateName;
+  }
+
+  return "Untitled experiment";
+}
+
+export function getExperimentRunStateKey(
+  ExperimentRunMetadata: ExperimentRunMetadata,
+): string {
+  return ExperimentRunMetadata.run_id;
 }

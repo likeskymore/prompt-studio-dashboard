@@ -4,108 +4,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
-import { Activity, ArrowRightLeft, Clock3, Coins, Loader2, Pause, Play, RefreshCw, ShieldAlert, Zap } from "lucide-react";
 import Container from "@/components/container";
 import { Button } from "@/components/ui/button";
 import { ExperimentRunMetadata, ExperimentRunSample, ExperimentRunState, Llm } from "@/features/experiment/models/ExperimentModels";
 import { MetricCard } from "./components/MetricCard";
 import { PerformanceLineChart } from "./components/PerformanceLineChart";
+import { ChartPanel } from "./components/ChartPanel";
 import { calculateActiveElapsedSeconds, formatDate, formatDuration, formatNumber, pickStrings } from "@/lib/utils";
-import { calculateCurrentRequestThroughput, calculatePeakRequestThroughput, getRequestsPerMinuteHistory, getTokensPerMinuteHistory, getTokensPerRequestHistory } from "@/lib/performanceUtils";
-
-
-function normalizeStatus(value: string | undefined): string {
-  return (value ?? "").trim().toLowerCase();
-}
-
-function inferExperimentRunStateStatus(experimentRunMetadata: ExperimentRunMetadata): string {
-  const explicitStatus = normalizeStatus(experimentRunMetadata.status);
-  if (explicitStatus) {
-    return explicitStatus;
-  }
-  return "queued";
-}
-
-
-function getStatusTone(status: string): { label: string; description: string; badgeClass: string; dotClass: string; accent: string } {
-  const normalizedStatus = normalizeStatus(status);
-
-  if (normalizedStatus === "running") {
-    return {
-      label: "Running",
-      description: "Live SSE updates are active.",
-      badgeClass: "bg-primary text-primary-foreground",
-      dotClass: "bg-emerald-500",
-      accent: "#2563eb",
-    };
-  }
-
-  if (normalizedStatus === "completed") {
-    return {
-      label: "Completed",
-      description: "Experiment run completed",
-      badgeClass: "bg-emerald-600 text-white",
-      dotClass: "bg-emerald-500",
-      accent: "#16a34a",
-    };
-  }
-
-  if (normalizedStatus === "failed") {
-    return {
-      label: "Failed",
-      description: "The run ended with an error state.",
-      badgeClass: "bg-destructive text-destructive-foreground",
-      dotClass: "bg-red-500",
-      accent: "#dc2626",
-    };
-  }
-
-  if (normalizedStatus === "paused") {
-    return {
-      label: "Paused",
-      description: "The experiment run is currently paused.",
-      badgeClass: "bg-amber-500 text-white",
-      dotClass: "bg-amber-500",
-      accent: "#d97706",
-    };
-  }
-
-  if (normalizedStatus === "queued") {
-    return {
-      label: "Queued",
-      description: "The run is waiting to start.",
-      badgeClass: "bg-amber-500 text-white",
-      dotClass: "bg-amber-500",
-      accent: "#d97706",
-    };
-  }
-
-  return {
-    label: normalizedStatus ? normalizedStatus : "Unknown",
-    description: "No explicit status was reported.",
-    badgeClass: "bg-muted text-muted-foreground",
-    dotClass: "bg-slate-400",
-    accent: "#64748b",
-  };
-}
-
-function getExperimentRunStateDisplayName(experimentRunState: ExperimentRunMetadata | null): string {
-  if (!experimentRunState) {
-    return "Select an experiment";
-  }
-
-  const record = experimentRunState as Record<string, any>;
-  const experimentRunStateName = record.experiment_name;
-  if (typeof experimentRunStateName === "string" && experimentRunStateName.length > 0) {
-    return experimentRunStateName;
-  }
-
-  return "Untitled experiment";
-}
-
-function getExperimentRunStateKey(ExperimentRunMetadata: ExperimentRunMetadata): string {
-  return ExperimentRunMetadata.run_id;
-}
+import { calculateCurrentRequestThroughput, calculatePeakRequestThroughput, getExperimentRunStateDisplayName, getExperimentRunStateKey, getRequestsPerMinuteHistory, getStatusTone, getTokensPerMinuteHistory, getTokensPerRequestHistory, inferExperimentRunStateStatus } from "@/lib/monitoringUtils";
+import { Loader2, Pause, Play, RefreshCw } from "lucide-react";
 
 export default function ExperimentMonitor() {
   const [experimentRunStates, setExperimentRunStates] = useState<ExperimentRunMetadata[]>([]);
@@ -413,6 +320,7 @@ export default function ExperimentMonitor() {
           ? {
             ...nextState,
             status: nextStatus,
+            paused_at: action === "pause" ? updatedAt : nextState.paused_at,
             updated_at: updatedAt,
           }
           : currentState;
@@ -475,7 +383,7 @@ export default function ExperimentMonitor() {
     (isLiveSelection
       ? new Date(now).toISOString()
       : currentRecord["status"] === "paused"
-        ? pausedAt
+        ? pausedAt ?? updatedAt
         : updatedAt);
 
   const elapsedSeconds = calculateActiveElapsedSeconds(
@@ -517,6 +425,89 @@ export default function ExperimentMonitor() {
   const p95LatencyMs = currentRecord["p95_latency_ms"];
   const p99LatencyMs = currentRecord["p99_latency_ms"];
   const averageLatencyMs = latencyCount > 0 ? totalLatencyMs / latencyCount : 0;
+  const minLatencyMs = currentRecord["min_latency_ms"]
+  const p25LatencyMs = currentRecord["p25_latency_ms"]
+  const p75LatencyMs = currentRecord["p75_latency_ms"]
+  const maxLatencyMs = currentRecord["max_latency_ms"]
+  const latencyBoxPlotValues = [
+    minLatencyMs,
+    p25LatencyMs,
+    p50LatencyMs,
+    p75LatencyMs,
+    maxLatencyMs,
+  ];
+  const hasLatencyBoxPlotValues = latencyBoxPlotValues.every(
+    (value) => typeof value === "number" && Number.isFinite(value),
+  );
+
+  const latencyBoxPlotOption: EChartsOption = {
+    backgroundColor: "transparent",
+    tooltip: {
+      trigger: "item",
+      formatter: (params) => {
+        const values = (params as { data?: number[] }).data;
+        if (!values) {
+          return "No latency samples";
+        }
+
+        // ECharts prepends the category index to box plot tooltip data.
+        const boxPlotValues = values.length >= 6 ? values.slice(1) : values;
+
+        return [
+          "Request latency",
+          `Minimum: ${formatNumber(boxPlotValues[0], 0)} ms`,
+          `P25: ${formatNumber(boxPlotValues[1], 0)} ms`,
+          `Median: ${formatNumber(boxPlotValues[2], 0)} ms`,
+          `P75: ${formatNumber(boxPlotValues[3], 0)} ms`,
+          `Maximum: ${formatNumber(boxPlotValues[4], 0)} ms`,
+          `P95: ${formatNumber(p95LatencyMs, 0)} ms`,
+          `P99: ${formatNumber(p99LatencyMs, 0)} ms`,
+        ].join("<br/>");
+      },
+    },
+    grid: {
+      left: 72,
+      right: 24,
+      top: 24,
+      bottom: 32,
+      containLabel: true,
+    },
+    xAxis: {
+      type: "category",
+      data: hasLatencyBoxPlotValues ? ["All requests"] : [],
+      axisLine: { lineStyle: { color: "rgba(148, 163, 184, 0.5)" } },
+      axisLabel: { color: "#64748b" },
+    },
+    yAxis: {
+      type: "value",
+      name: "Milliseconds",
+      nameGap: 12,
+      nameTextStyle: { color: "#64748b" },
+      axisLabel: { color: "#64748b" },
+      splitLine: { lineStyle: { color: "rgba(148, 163, 184, 0.16)" } },
+    },
+    series: [
+      {
+        type: "boxplot",
+        data: hasLatencyBoxPlotValues ? [latencyBoxPlotValues] : [],
+        itemStyle: {
+          color: "rgba(37, 99, 235, 0.18)",
+          borderColor: "#2563eb",
+          borderWidth: 2,
+        },
+      },
+    ],
+  };
+
+  const latencyTableData = [
+    { label: "Minimum", value: `${formatNumber(minLatencyMs, 2)} ms` },
+    { label: "P25 / Q1", value: `${formatNumber(p25LatencyMs, 2)} ms` },
+    { label: "P50 / Median", value: `${formatNumber(p50LatencyMs, 2)} ms` },
+    { label: "P75 / Q3", value: `${formatNumber(p75LatencyMs, 2)} ms` },
+    { label: "P95", value: `${formatNumber(p95LatencyMs, 2)} ms` },
+    { label: "P99", value: `${formatNumber(p99LatencyMs, 2)} ms` },
+    { label: "Maximum", value: `${formatNumber(maxLatencyMs, 2)} ms` },
+  ];
 
   const progressOption: EChartsOption = {
     backgroundColor: "transparent",
@@ -961,7 +952,6 @@ export default function ExperimentMonitor() {
             <MetricCard
               title="Token usage"
               value={formatNumber(tokensUsed)}
-              icon={<ArrowRightLeft className="h-4 w-4" />}
             />
             <MetricCard
               title="Request volume"
@@ -1004,10 +994,6 @@ export default function ExperimentMonitor() {
                       </p>
                     </div>
                   </div>
-                </div>
-
-                <div className="rounded-xl border border-border bg-muted/60 p-2 text-muted-foreground">
-                  <Clock3 className="h-4 w-4" />
                 </div>
               </div>
             </div>
@@ -1057,14 +1043,12 @@ export default function ExperimentMonitor() {
                   title="Tokens / Request"
                   value={tokensPerRequest.toFixed(1)}
                   detail="Average tokens per request"
-                  icon={<Coins className="h-4 w-4" />}
                 />
 
                 <MetricCard
                   title="Requests / Minute"
                   value={currentRequestThroughput.toFixed(1)}
                   detail="Current request throughput"
-                  icon={<Activity className="h-4 w-4" />}
                   secondaryValues={[
                     {
                       label: "Average",
@@ -1081,7 +1065,6 @@ export default function ExperimentMonitor() {
                   title="Tokens / Minute"
                   value={tokensPerMinute.toFixed(1)}
                   detail="Average token throughput"
-                  icon={<Zap className="h-4 w-4" />}
                 />
               </div>
 
@@ -1107,7 +1090,6 @@ export default function ExperimentMonitor() {
                     </p>
                   </div>
 
-                  <ShieldAlert className="h-5 w-5 text-muted-foreground" />
                 </div>
 
                 <div className="space-y-3">
@@ -1157,6 +1139,21 @@ export default function ExperimentMonitor() {
               unit="tokens/min"
             />
           </div>
+          <ChartPanel
+            title="Request latency distribution"
+            description={hasLatencyBoxPlotValues
+              ? "Box plot showing the minimum, middle 50%, median, and maximum request latency. P95 and P99 are included as tail-latency context."
+              : "The latency percentile summary is incomplete for this run."}
+            data={latencyTableData}
+            chart={
+              <div className="h-65">
+                <ReactECharts
+                  option={latencyBoxPlotOption}
+                  style={{ height: "100%", width: "100%" }}
+                />
+              </div>
+            }
+          />
         </main>
       </div>
     </Container>

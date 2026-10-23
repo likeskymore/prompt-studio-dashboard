@@ -1,14 +1,14 @@
-import { monitoringApiService } from "@/services/monitoringApi";
-import { monitoringDbService } from "@/services/monitoringDb";
+import { experimentStateApiService } from "@/services/experimentStateApi";
+import { experimentStateDbService } from "@/services/experimentStateDb";
 
-export const monitoringDataSource = {
+export const experimentStateDataSource = {
   async getAllExperimentStatesMetadata() {
     try {
-      return await monitoringApiService
+      return await experimentStateApiService
         .getAllExperimentStatesMetadata()
         .then((response) => response.body.experiment_states_metadata ?? []);
     } catch {
-      return await monitoringDbService.getAllExperimentStatesMetadata();
+      return await experimentStateDbService.getAllExperimentStatesMetadata();
     }
   },
 
@@ -21,7 +21,7 @@ export const monitoringDataSource = {
     },
   ) {
     try {
-      await monitoringApiService.subscribeToExperimentRun(runId, options);
+      await experimentStateApiService.subscribeToExperimentRun(runId, options);
 
       return;
     } catch (error) {
@@ -38,7 +38,7 @@ export const monitoringDataSource = {
       }
 
       try {
-        const state = await monitoringDbService.getExperimentRunState(runId);
+        const state = await experimentStateDbService.getExperimentRunState(runId);
 
         if (state) {
           options.onData(state);
@@ -61,11 +61,11 @@ export const monitoringDataSource = {
 
   async getExperimentRunState(runId: string) {
     try {
-      return await monitoringApiService
+      return await experimentStateApiService
         .getExperimentRunState(runId)
         .then((response) => response.body ?? null);
     } catch {
-      return await monitoringDbService.getExperimentRunState(runId);
+      return await experimentStateDbService.getExperimentRunState(runId);
     }
   },
 };

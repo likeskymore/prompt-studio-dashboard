@@ -5,14 +5,14 @@ import {
 import { baseApiService } from "@/services/api";
 import type { BaseResponse } from "@/types/api";
 
-class MonitoringApiService {
-  private readonly BASE_PATH = "/monitoring";
+class ExperimentStateApiService {
+  private readonly BASE_PATH = "/experiment_states";
 
   async getAllExperimentStatesMetadata(): Promise<
     BaseResponse<ExperimentStateMetadataListResponse>
   > {
     return baseApiService.get<ExperimentStateMetadataListResponse>({
-      endpoint: `${this.BASE_PATH}/states`,
+      endpoint: `${this.BASE_PATH}/`,
     });
   }
 
@@ -42,4 +42,4 @@ class MonitoringApiService {
   }
 }
 
-export const monitoringApiService = new MonitoringApiService();
+export const experimentStateApiService = new ExperimentStateApiService();

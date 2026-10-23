@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { monitoringDataSource } from "@/data-sources/monitoringDataSource";
+import { experimentStateDataSource } from "@/data-sources/experimentStateDataSource";
 
 export async function GET(
   _request: Request,
@@ -9,7 +9,7 @@ export async function GET(
     const { runId } = await params;
 
     const experiment_state =
-      await monitoringDataSource.getExperimentRunState(runId);
+      await experimentStateDataSource.getExperimentRunState(runId);
 
     if (!experiment_state) {
       return NextResponse.json(

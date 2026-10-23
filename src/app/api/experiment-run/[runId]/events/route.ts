@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { monitoringDataSource } from "@/data-sources/monitoringDataSource";
+import { experimentStateDataSource } from "@/data-sources/experimentStateDataSource";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export async function GET(
         );
       };
 
-      void monitoringDataSource
+      void experimentStateDataSource
         .subscribeToExperimentRun(runId, {
           signal: request.signal,
 

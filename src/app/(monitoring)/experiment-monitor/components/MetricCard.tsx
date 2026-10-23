@@ -4,7 +4,6 @@ export function MetricCard({
   title,
   value,
   detail,
-  icon,
   secondaryValues,
 }: MetricCardProps) {
   return (
@@ -37,10 +36,6 @@ export function MetricCard({
               ))}
             </div>
           )}
-        </div>
-
-        <div className="shrink-0 rounded-xl border border-border bg-muted/60 p-2 text-muted-foreground">
-          {icon}
         </div>
       </div>
     </div>

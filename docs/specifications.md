@@ -111,7 +111,7 @@ The application separates data access from UI components.
 ### Data Sources
 
 - `experimentDataSource.ts` provides experiment-related data.
-- `monitoringDataSource.ts` provides monitoring and metric data.
+- `experimentStateDataSource.ts` provides monitoring and metric data.
 
 ### Services
 

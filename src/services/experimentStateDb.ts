@@ -3,7 +3,7 @@ import {
 } from "@/features/experiment/models/ExperimentModels";
 import { baseDbService } from "@/services/db";
 
-class MonitoringDbService {
+class ExperimentStateDbService {
   async getAllExperimentStatesMetadata(): Promise<ExperimentRunState[]> {
     return baseDbService.query<ExperimentRunState[]>(`
       SELECT run_id, experiment_name, status, started_at, finished_at, updated_at
@@ -30,4 +30,4 @@ class MonitoringDbService {
   
 }
 
-export const monitoringDbService = new MonitoringDbService();
+export const experimentStateDbService = new ExperimentStateDbService();

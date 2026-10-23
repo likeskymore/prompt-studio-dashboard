@@ -14,7 +14,7 @@ PromptStudio Dashboard is a Next.js application for monitoring experiment runs a
 
 - Node.js 20 or later
 - npm
-- Access to the PromptStudio API, a compatible MySQL database, or both
+- **A running PromptStudio data source is required.** You must have access to the [PromptStudio API](https://github.com/likeskymore/PromptStudio/tree/main), a compatible MySQL database used by PromptStudio, or both. This dashboard does not include the API or database and cannot run meaningfully without one of them.
 
 ## Quick start
 
@@ -23,9 +23,9 @@ npm install
 npm run dev
 ```
 
-The dashboard is available at [http://localhost:3005](http://localhost:3005).
+The dashboard is available at [http://localhost:3005](http://localhost:3005), but it will not be usable until it is connected to the PromptStudio API or its database. See the [Getting started guide](docs/getting-started.md) for environment configuration.
 
-See the [Getting started guide](docs/getting-started.md) for environment configuration.
+You need to run or otherwise provision the PromptStudio backend separately from this project. Get it from the [PromptStudio repository](https://github.com/likeskymore/PromptStudio/tree/main), or provide access to the MySQL database it uses.
 
 ## Documentation
 

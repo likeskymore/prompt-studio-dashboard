@@ -23,8 +23,8 @@ export type Llm = {
 };
 
 export type ExperimentRunState = {
-  run_id: string;
   experiment_id: number;
+  run_id: string;
   experiment_name: string;
   status: ExperimentRunStatus;
   created_at: string;
@@ -35,6 +35,7 @@ export type ExperimentRunState = {
   total_paused_ms?: number;
   total_tasks: number;
   attempts: number;
+  in_progress: number;
   completed: number;
   failed: number;
   retries: number;
@@ -42,9 +43,13 @@ export type ExperimentRunState = {
   last_error?: string;
   total_latency_ms: number;
   latency_count: number;
+  min_latency_ms: number;
+  p25_latency_ms: number;
   p50_latency_ms: number;
+  p75_latency_ms: number;
   p95_latency_ms: number;
   p99_latency_ms: number;
+  max_latency_ms: number;
   latency_samples: number[];
   samples: ExperimentRunSample[];
 };

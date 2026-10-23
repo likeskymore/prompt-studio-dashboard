@@ -1,7 +1,7 @@
 import { formatNumber } from "@/lib/utils";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
-import { Activity } from "lucide-react";
+import { ChartPanel } from "./ChartPanel";
 
 interface DataPoint {
     time: string;
@@ -61,31 +61,11 @@ export function PerformanceLineChart({
     const currentValue = data.at(-1)?.value;
 
     return (
-        <div className="rounded-3xl border border-border bg-card/90 p-6 shadow-sm backdrop-blur">
-            <div className="mb-5 flex items-start justify-between gap-4">
-                <div>
-                    <h2 className="text-lg font-semibold">{title}</h2>
-
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        Current {unit}:{" "}
-                        {currentValue !== undefined
-                            ? currentValue.toFixed(2)
-                            : "—"}
-                    </p>
-                </div>
-
-                <Activity className="h-5 w-5 text-muted-foreground" />
-            </div>
-
-            <div className="h-80 w-full">
-                <ReactECharts
-                    option={option}
-                    style={{
-                        height: "100%",
-                        width: "100%",
-                    }}
-                />
-            </div>
-        </div>
+        <ChartPanel
+            title={title}
+            description={`Current ${unit}: ${currentValue !== undefined ? currentValue.toFixed(2) : "--"}`}
+            data={data.map((point) => ({ label: point.time, value: point.value }))}
+            chart={<div className="h-80 w-full"><ReactECharts option={option} style={{ height: "100%", width: "100%" }} /></div>}
+        />
     );
 }

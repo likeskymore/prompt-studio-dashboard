@@ -2,7 +2,6 @@
 
 import { Experiment } from "@/features/experiment/models/ExperimentModels";
 import { useEffect, useState } from "react";
-import { experimentApiService } from "@/services/experimentApi";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -42,12 +41,15 @@ const ExperimentRunnerPage = () => {
     }
 
     try {
-      const response = await experimentApiService.rerunExperiment(experimentName);
+      const response = await fetch(
+        `/api/experiments/run/${encodeURIComponent(experimentName)}/rerun`,
+        { method: "POST" },
+      );
 
-      if (response.responseCode === "SUCCESS") {
+      if (response.ok) {
         setRunStatus(`Experiment "${experimentName}" started successfully`);
       } else {
-        setRunStatus(`Failed: ${response.responseCode}`);
+        setRunStatus("Failed to start experiment");
       }
 
     } catch (error) {

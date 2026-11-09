@@ -49,5 +49,15 @@ export const experimentDataSource = {
     } catch {
       return await experimentDbService.deleteExperiment(experimentId);
     }
-  }
+  },
+  async rerunExperiment(experimentName: string): Promise<string> {
+    try {
+      const response = await experimentApiService.rerunExperiment(experimentName);
+      console.log(response);
+      return response.body;
+    } catch (error) {
+      console.error("Failed to rerun experiment:", error);
+      throw error;
+    }
+  },
 };

@@ -27,7 +27,6 @@ class ExperimentStateDbService {
 
     return rows[0] ?? null;
   }
-  
 }
 
 export const experimentStateDbService = new ExperimentStateDbService();

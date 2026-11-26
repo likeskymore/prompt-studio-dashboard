@@ -148,24 +148,19 @@ const ExperimentRunnerPage = () => {
           )}
         </div>
 
-        <Button
-          asChild
-          variant="outline"
+        <Link
+          href="/experiment-monitor"
           className="
-            border-2
-            border-border
-            hover:bg-accent
-            hover:text-accent-foreground
+            inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border-2
+            border-border bg-background px-4 py-2 text-sm font-medium transition-colors
+            hover:bg-accent hover:text-accent-foreground
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+            focus-visible:ring-offset-2
           "
         >
-          <Link
-            href="/experiment-monitor"
-            className="flex items-center gap-2"
-          >
-            Monitor Experiment
-            <ArrowRight size={16} />
-          </Link>
-        </Button>
+          Monitor Experiment
+          <ArrowRight size={16} />
+        </Link>
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { Experiment } from "@/features/experiment/models/ExperimentModels";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { ArrowRight, Trash2 } from "lucide-react";
@@ -148,24 +148,16 @@ const ExperimentRunnerPage = () => {
           )}
         </div>
 
-        <Button
-          asChild
-          variant="outline"
-          className="
-            border-2
-            border-border
-            hover:bg-accent
-            hover:text-accent-foreground
-          "
+        <Link
+          href="/experiment-monitor"
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "border-2 border-border hover:bg-accent hover:text-accent-foreground",
+          )}
         >
-          <Link
-            href="/experiment-monitor"
-            className="flex items-center gap-2"
-          >
-            Monitor Experiment
-            <ArrowRight size={16} />
-          </Link>
-        </Button>
+          Monitor Experiment
+          <ArrowRight size={16} />
+        </Link>
       </div>
     </div>
   );
